@@ -1,0 +1,36 @@
+# Credentials — không bao giờ commit
+.env
+config/.env
+*.key
+
+# Data files — quá lớn cho git
+data/market/
+data/foreign_flow/
+db/
+*.parquet
+*.db
+
+# State files — sinh ra lúc runtime
+state/portfolio.json
+state/signal_queue.json
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Productivity tools (local only)
+dashboard.html
+TASKS.md
+CLAUDE.md
+memory/
