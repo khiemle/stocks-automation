@@ -65,6 +65,29 @@ def cmd_init_data(args):
     dm.init_data(years=args.years)
 
 
+def cmd_validate(args):
+    config = load_config()
+    from data_sources.yfinance_client import YFinanceClient
+    from data_sources.ssi_data_client import SSIDataClient
+    from core.data_manager import DataManager
+
+    data_source_cls = {"YFINANCE": YFinanceClient, "SSI": SSIDataClient}[
+        config["data_source"]
+    ]
+    dm = DataManager(data_source_cls())
+    exchange = args.exchange or "HOSE"
+    symbols = [args.symbol] if args.symbol else dm.data_source.get_universe(exchange)
+    errors = 0
+    for sym in symbols:
+        report = dm.validate_data(sym, exchange=exchange)
+        if report.has_warnings:
+            print(f"[WARN] {sym}: {'; '.join(report.warnings)}")
+            errors += 1
+        else:
+            print(f"[OK]   {sym}")
+    print(f"\n{len(symbols) - errors}/{len(symbols)} symbols clean.")
+
+
 def cmd_backtest(args):
     config = load_config()
     from core.backtester import Backtester
@@ -95,6 +118,10 @@ def main():
     p_init = sub.add_parser("init-data")
     p_init.add_argument("--years", type=int, default=5)
 
+    p_val = sub.add_parser("validate")
+    p_val.add_argument("--symbol", default=None, help="single symbol (omit = all)")
+    p_val.add_argument("--exchange", default="HOSE", choices=["HOSE", "HNX"])
+
     p_bt = sub.add_parser("backtest")
     p_bt.add_argument("symbol")
     p_bt.add_argument("--years", type=int, default=3)
@@ -105,7 +132,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "start":
+    if args.command == "validate":
+        cmd_validate(args)
+    elif args.command == "start":
         cmd_start(args)
     elif args.command == "init-data":
         cmd_init_data(args)
