@@ -5,5 +5,4 @@
 # Removed (delisted/no yfinance data): VCS, DHT, VGS, IDC, NTP, PVS, QNS
 SJD
 DBC
-PTC
 BSI

@@ -78,9 +78,9 @@ def cmd_scan(args):
     dm = DataManager(data_source_cls())
     engine = MomentumV1()
 
-    symbols = [args.symbol] if args.symbol else (
-        dm.data_source.get_universe("HOSE") + dm.data_source.get_universe("HNX")
-    )
+    symbols = [args.symbol] if args.symbol else list(dict.fromkeys(
+        dm.get_universe("HOSE") + dm.get_universe("HNX")
+    ))
 
     results = []
     for sym in symbols:
@@ -150,7 +150,7 @@ def cmd_validate(args):
     ]
     dm = DataManager(data_source_cls())
     exchange = args.exchange or "HOSE"
-    symbols = [args.symbol] if args.symbol else dm.data_source.get_universe(exchange)
+    symbols = [args.symbol] if args.symbol else dm.get_universe(exchange)
     errors = 0
     for sym in symbols:
         report = dm.validate_data(sym, exchange=exchange)
