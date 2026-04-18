@@ -170,17 +170,16 @@ class DataManager:
         if not gap_days.empty:
             warnings.append(f"{len(gap_days)} days with close gap > {_GAP_THRESHOLD:.0%}")
 
-        # Price band: use intraday range (high/low vs open) — not close-to-close
-        # close-to-close triggers false positives on dividend ex-dates (adjusted prices)
-        if "open" in df.columns:
-            intraday_up = (df["high"] - df["open"]) / df["open"]
-            intraday_dn = (df["open"] - df["low"]) / df["open"]
-            intraday_max = pd.concat([intraday_up, intraday_dn], axis=1).max(axis=1)
-            out_of_band = intraday_max[intraday_max > band]
-            if not out_of_band.empty:
-                warnings.append(
-                    f"{len(out_of_band)} days with intraday range > {band:.0%} (price band)"
-                )
+        # Price band: high/low vs prev_close (reference price) — HOSE/HNX rule
+        # Using prev_close as reference, not open (open can be anywhere within the band)
+        prev_close = df["close"].shift(1)
+        band_breach_up = (df["high"] - prev_close) / prev_close
+        band_breach_dn = (prev_close - df["low"]) / prev_close
+        breach = df[(band_breach_up > band + 0.005) | (band_breach_dn > band + 0.005)]
+        if not breach.empty:
+            warnings.append(
+                f"{len(breach)} days with high/low outside {band:.0%} band vs prev_close"
+            )
 
         return ValidationReport(symbol=symbol, warnings=warnings)
 

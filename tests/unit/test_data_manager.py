@@ -163,14 +163,14 @@ class TestValidateData:
         monkeypatch.setattr(mod, "_MARKET_DIR", tmp_path / "data" / "market")
 
         df = _make_ohlcv(5, base_close=50000)
-        # Simulate intraday spike: high = open × 1.10 (10% above open → > 7% band)
-        df.loc[df.index[2], "high"] = 55000  # open=50000, high=55000 → +10%
+        # Simulate high exceeding 7% band vs prev_close (+10% above prev_close=50000)
+        df.loc[df.index[2], "high"] = 55000  # prev_close=50000, high=55000 → +10%
         self._write_parquet(tmp_path, "VCB", df)
 
         dm = DataManager(MagicMock())
         report = dm.validate_data("VCB", "HOSE")
         assert report.has_warnings
-        assert any("price band" in w for w in report.warnings)
+        assert any("band" in w for w in report.warnings)
 
     def test_no_future_data_leak(self, tmp_path, monkeypatch):
         import core.data_manager as mod
