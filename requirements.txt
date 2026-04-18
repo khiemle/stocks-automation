@@ -1,5 +1,5 @@
-pandas>=2.0
-pandas-ta>=0.3.14b
+pandas>=2.0,<3.0
+ta>=0.11.0
 yfinance>=0.2.36
 pyarrow>=14.0
 apscheduler>=3.10
