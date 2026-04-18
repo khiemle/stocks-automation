@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 _MARKET_DIR = Path("data/market")
 _PERIODS_PER_YEAR = 252
+_WARMUP_BARS = 252   # bars reserved for indicator warm-up (EMA200 needs 200+)
 
 
 @dataclass
@@ -159,7 +160,7 @@ class Backtester:
 
         for sym in symbols:
             df = self._load(sym, years)
-            if df is None or len(df) < 60:
+            if df is None or len(df) < _WARMUP_BARS + 60:
                 logger.warning("Skipping %s — insufficient data", sym)
                 continue
             trades, eq = self._simulate(sym, df)
@@ -195,12 +196,14 @@ class Backtester:
 
         for sym in symbols:
             df = self._load(sym, years=5)
-            if df is None or len(df) < 60:
+            if df is None or len(df) < _WARMUP_BARS + 60:
                 continue
 
             split_idx = int(len(df) * split)
             df_is  = df.iloc[:split_idx]
-            df_oos = df.iloc[split_idx:]
+            # OOS gets its own warmup window prepended so EMA200 is calibrated
+            oos_start = max(0, split_idx - _WARMUP_BARS)
+            df_oos = df.iloc[oos_start:]
 
             is_trades, is_eq  = self._simulate(sym, df_is)
             oos_trades, oos_eq = self._simulate(sym, df_oos)
@@ -246,6 +249,8 @@ class Backtester:
         pending_signal: Optional[str] = None   # "BUY" | "SELL"
 
         for i in range(1, len(df)):
+            # Skip warmup period — indicators (esp. EMA200) need prior history
+            in_warmup = i < _WARMUP_BARS
             bar      = df.iloc[i]
             bar_date = str(df.index[i].date())
 
@@ -308,7 +313,7 @@ class Backtester:
             # ── Generate signal on close of bar i ───────────────────
             # Only signal if position was open/closed BEFORE this bar
             # (avoids immediate re-entry on the stop-out bar)
-            if pending_signal is None:
+            if pending_signal is None and not in_warmup:
                 window = df.iloc[: i + 1]
                 try:
                     result = engine.evaluate(window, foreign_flow=None)
@@ -368,7 +373,8 @@ class Backtester:
 
     @staticmethod
     def _load(symbol: str, years: int) -> Optional[pd.DataFrame]:
-        days = years * 365
+        # Load warmup bars + trading window so EMA200 is calibrated on pre-window data
+        days = years * 365 + _WARMUP_BARS
         for exchange in ("HOSE", "HNX"):
             path = _MARKET_DIR / exchange / f"{symbol}.parquet"
             if path.exists():
