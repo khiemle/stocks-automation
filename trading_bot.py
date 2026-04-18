@@ -85,7 +85,7 @@ def cmd_scan(args):
     results = []
     for sym in symbols:
         try:
-            df = dm.get_ohlcv(sym, days=120)
+            df = dm.get_ohlcv(sym, days=300)
             result = engine.evaluate(df, foreign_flow=None)
             results.append((sym, result))
             if args.symbol:
