@@ -1,0 +1,39 @@
+{
+  "capital": {
+    "initial": 500000000,
+    "max_positions": 5,
+    "risk_per_trade_pct": 0.02,
+    "max_position_pct": 0.20
+  },
+  "data_source": "YFINANCE",
+  "broker": "SimulatedBroker",
+  "signal_engines": [
+    { "name": "MomentumV1", "enabled": true, "weight": 1.0 }
+  ],
+  "signal": {
+    "min_score": 0.55,
+    "min_volume_ma20": 100000
+  },
+  "risk": {
+    "atr_stop_multiplier": 1.5,
+    "atr_tp_multiplier": 4.5,
+    "atr_trailing_trigger_r": 1.0
+  },
+  "scheduler": {
+    "daily_scan_time": "15:35",
+    "order_placement_time": "09:10",
+    "cancel_unfilled_time": "14:30",
+    "equity_snapshot_time": "15:10",
+    "weekly_reset_day": "monday",
+    "weekly_reset_time": "08:00",
+    "signal_expiry_time": "08:30",
+    "intraday_interval_minutes": 30
+  },
+  "telegram": {
+    "enabled": false,
+    "bot_token": "",
+    "chat_id": ""
+  },
+  "watchlist": [],
+  "mode": "PAPER"
+}

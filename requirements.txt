@@ -1,0 +1,10 @@
+pandas>=2.0
+pandas-ta>=0.3.14b
+yfinance>=0.2.36
+pyarrow>=14.0
+apscheduler>=3.10
+streamlit>=1.32
+python-dotenv>=1.0
+requests>=2.31
+pytest>=8.0
+pytest-mock>=3.12
