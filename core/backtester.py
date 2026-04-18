@@ -210,44 +210,44 @@ class Backtester:
         from brokers.simulated_broker import SimulatedBroker
         from signals.momentum_v1 import MomentumV1
         from core.risk_engine import RiskEngine
+        from ta.volatility import AverageTrueRange
 
         engine = MomentumV1()
         broker = SimulatedBroker(initial_cash=self._initial_cash)
         risk = RiskEngine(backtest_mdd=0.20, capital=self._initial_cash)
 
+        # Pre-compute ATR for entire series once
+        atr_series = AverageTrueRange(df["high"], df["low"], df["close"], window=14) \
+                         .average_true_range()
+
         trades: List[TradeLog] = []
         equity: List[float] = [self._initial_cash]
 
-        open_position: Optional[dict] = None   # {entry_price, qty, stop, tp, entry_date}
+        open_position: Optional[dict] = None   # {entry_price, qty, stop, tp, entry_date, entry_bar}
         pending_signal: Optional[str] = None   # "BUY" | "SELL"
 
         for i in range(1, len(df)):
             bar      = df.iloc[i]
-            prev_bar = df.iloc[i - 1]
             bar_date = str(df.index[i].date())
-            prev_date = str(df.index[i - 1].date())
 
-            # ── Fill pending signal from previous close ──────────────
+            # ── Fill pending BUY at T+1 open ─────────────────────────
             if pending_signal == "BUY" and open_position is None:
-                broker.place_order(symbol, "B", _qty := self._size(broker, bar, risk, symbol),
-                                   "ATO", None, "paper")
-                if _qty > 0:
+                qty = self._size(broker, bar, risk, symbol)
+                if qty > 0:
+                    broker.place_order(symbol, "B", qty, "ATO", None, "paper")
                     broker.process_next_bar(symbol, bar, bar_date)
-                    status = broker.get_account_balance("paper")
-                    # recover entry from broker's filled list
                     filled = [t for t in broker._filled if t.side == "B" and t.fill_date == bar_date]
                     if filled:
-                        fp = filled[-1].fill_price
-                        qty = filled[-1].quantity
-                        from ta.volatility import AverageTrueRange
-                        atr_val = float(AverageTrueRange(df["high"], df["low"], df["close"], window=14)
-                                        .average_true_range().iloc[i])
-                        stop = fp - risk.ATR_STOP_MULT * atr_val
-                        tp   = fp + risk.ATR_TP_MULT   * atr_val
-                        open_position = dict(entry_price=fp, qty=qty, stop=stop,
-                                             tp=tp, entry_date=bar_date)
+                        fp      = filled[-1].fill_price
+                        qty_f   = filled[-1].quantity
+                        atr_val = float(atr_series.iloc[i]) if not np.isnan(atr_series.iloc[i]) else fp * 0.02
+                        stop    = fp - risk.ATR_STOP_MULT * atr_val
+                        tp      = fp + risk.ATR_TP_MULT   * atr_val
+                        open_position = dict(entry_price=fp, qty=qty_f, stop=stop,
+                                             tp=tp, entry_date=bar_date, entry_bar=i)
                 pending_signal = None
 
+            # ── Fill pending SELL at T+1 open ────────────────────────
             elif pending_signal == "SELL" and open_position is not None:
                 broker.place_order(symbol, "S", open_position["qty"], "ATO", None, "paper")
                 broker.process_next_bar(symbol, bar, bar_date)
@@ -258,8 +258,8 @@ class Backtester:
                     open_position = None
                 pending_signal = None
 
-            # ── Intraday stop/TP check ───────────────────────────────
-            if open_position is not None:
+            # ── Intraday stop/TP check (never on entry bar) ──────────
+            if open_position is not None and i > open_position["entry_bar"]:
                 lo, hi = float(bar["low"]), float(bar["high"])
                 if lo <= open_position["stop"]:
                     exit_price = open_position["stop"]
@@ -275,17 +275,20 @@ class Backtester:
                     open_position = None
 
             # ── Generate signal on close of bar i ───────────────────
-            window = df.iloc[: i + 1]
-            try:
-                result = engine.evaluate(window, foreign_flow=None)
-            except Exception:
-                equity.append(equity[-1])
-                continue
+            # Only signal if position was open/closed BEFORE this bar
+            # (avoids immediate re-entry on the stop-out bar)
+            if pending_signal is None:
+                window = df.iloc[: i + 1]
+                try:
+                    result = engine.evaluate(window, foreign_flow=None)
+                except Exception:
+                    equity.append(equity[-1])
+                    continue
 
-            if result.action == "BUY" and open_position is None:
-                pending_signal = "BUY"
-            elif result.action == "SELL" and open_position is not None:
-                pending_signal = "SELL"
+                if result.action == "BUY" and open_position is None:
+                    pending_signal = "BUY"
+                elif result.action == "SELL" and open_position is not None:
+                    pending_signal = "SELL"
 
             # ── Mark-to-market equity ────────────────────────────────
             mv = (open_position["qty"] * float(bar["close"])) if open_position else 0.0
