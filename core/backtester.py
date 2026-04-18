@@ -283,21 +283,27 @@ class Backtester:
                         open_position = None
                     pending_signal = None
 
-            # ── Intraday stop/TP check (never on entry bar) ──────────
+            # ── Intraday stop/TP check (never on entry bar; respect T+2) ──
             if open_position is not None and i > open_position["entry_bar"]:
-                lo, hi = float(bar["low"]), float(bar["high"])
-                if lo <= open_position["stop"]:
-                    exit_price = open_position["stop"]
-                    trades.append(self._make_trade(symbol, open_position, exit_price, bar_date))
-                    broker._cash += open_position["qty"] * exit_price * (1 - _COMMISSION_RATE - _SLIPPAGE_RATE)
-                    broker._positions.pop(symbol, None)
-                    open_position = None
-                elif hi >= open_position["tp"]:
-                    exit_price = open_position["tp"]
-                    trades.append(self._make_trade(symbol, open_position, exit_price, bar_date))
-                    broker._cash += open_position["qty"] * exit_price * (1 - _COMMISSION_RATE - _SLIPPAGE_RATE)
-                    broker._positions.pop(symbol, None)
-                    open_position = None
+                buy_ts  = pd.Timestamp(open_position["entry_date"])
+                sell_ts = pd.Timestamp(bar_date)
+                bd_elapsed = len(pd.bdate_range(start=buy_ts, end=sell_ts)) - 1
+                t2_clear = bd_elapsed >= 2
+
+                if t2_clear:
+                    lo, hi = float(bar["low"]), float(bar["high"])
+                    if lo <= open_position["stop"]:
+                        exit_price = open_position["stop"]
+                        trades.append(self._make_trade(symbol, open_position, exit_price, bar_date))
+                        broker._cash += open_position["qty"] * exit_price * (1 - _COMMISSION_RATE - _SLIPPAGE_RATE)
+                        broker._positions.pop(symbol, None)
+                        open_position = None
+                    elif hi >= open_position["tp"]:
+                        exit_price = open_position["tp"]
+                        trades.append(self._make_trade(symbol, open_position, exit_price, bar_date))
+                        broker._cash += open_position["qty"] * exit_price * (1 - _COMMISSION_RATE - _SLIPPAGE_RATE)
+                        broker._positions.pop(symbol, None)
+                        open_position = None
 
             # ── Generate signal on close of bar i ───────────────────
             # Only signal if position was open/closed BEFORE this bar
