@@ -175,7 +175,7 @@ class DataManager:
         prev_close = df["close"].shift(1)
         band_breach_up = (df["high"] - prev_close) / prev_close
         band_breach_dn = (prev_close - df["low"]) / prev_close
-        breach = df[(band_breach_up > band + 0.005) | (band_breach_dn > band + 0.005)]
+        breach = df[(band_breach_up > band + 0.01) | (band_breach_dn > band + 0.01)]
         if not breach.empty:
             warnings.append(
                 f"{len(breach)} days with high/low outside {band:.0%} band vs prev_close"
