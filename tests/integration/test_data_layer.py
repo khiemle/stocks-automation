@@ -15,6 +15,7 @@ import pandas as pd
 import pytest
 
 from core.data_manager import DataManager
+from core.trading_calendar import last_trading_date
 from data_sources.yfinance_client import YFinanceClient
 
 pytestmark = pytest.mark.integration
@@ -136,19 +137,27 @@ def test_data_manager_uses_cache_not_network(tmp_path, monkeypatch):
 def test_fetch_75pct_of_universe_succeed(tmp_path, monkeypatch):
     """Real yfinance fetch: >= 75% of universe must return data.
 
-    yfinance hỗ trợ tốt HOSE (~140 mã), HNX coverage hạn chế (~11 mã).
-    Dùng 1 năm lịch sử để tránh lỗi khi chạy vào cuối tuần/ngày lễ.
+    Dùng last_trading_date() làm end date để tránh fetch ngày cuối tuần/
+    chưa có data (trước 15:30). Threshold 75% vì HNX coverage hạn chế.
     """
     import core.data_manager as mod
     monkeypatch.setattr(mod, "_MARKET_DIR", tmp_path / "market")
     monkeypatch.setattr(mod, "_BATCH_DELAY", 2.5)
 
+    end = last_trading_date()
+    start = end - timedelta(days=365)
+
     client = YFinanceClient()
     dm = DataManager(client)
 
-    result = dm.init_data(years=1)
+    # Monkey-patch date.today() trong data_manager để dùng last_trading_date
+    with patch("core.data_manager.date") as mock_date:
+        mock_date.today.return_value = end
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        result = dm.init_data(years=1)
+
     threshold = int(result.total * 0.75)
     assert result.success >= threshold, (
         f"Only {result.success}/{result.total} succeeded (need >= {threshold}). "
-        f"Failed: {result.failed[:10]}"
+        f"end={end}, Failed: {result.failed[:10]}"
     )

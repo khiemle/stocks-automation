@@ -5,6 +5,7 @@ pyarrow>=14.0
 apscheduler>=3.10
 streamlit>=1.32
 python-dotenv>=1.0
+pytz>=2024.1
 requests>=2.31
 pytest>=8.0
 pytest-mock>=3.12
