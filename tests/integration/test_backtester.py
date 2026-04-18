@@ -96,11 +96,12 @@ def test_backtest_matches_paper_simulation_on_same_data(tmp_path, monkeypatch):
     """
     Anti-bias check: running _simulate twice on the same df must produce
     identical trade counts and identical net P&L (no randomness or state leak).
+    Uses 600 bars so signals are actually generated past _WARMUP_BARS(252).
     """
     import core.backtester as mod
     monkeypatch.setattr(mod, "_MARKET_DIR", tmp_path / "data" / "market")
 
-    df = _make_ohlcv(200)
+    df = _make_ohlcv(600)
     _write_parquet(tmp_path, "VCB", df)
 
     bt = Backtester(_make_config())

@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from core.portfolio_manager import _COMMISSION_RATE, _SLIPPAGE_RATE
+from brokers.simulated_broker import _COMMISSION_RATE, _SLIPPAGE_RATE
 
 logger = logging.getLogger(__name__)
 

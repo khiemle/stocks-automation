@@ -50,35 +50,43 @@ def test_walk_forward_split_is_70_30(tmp_path, monkeypatch):
     df.to_parquet(d / "VCB.parquet")
 
     bt = Backtester(_make_config())
-    # We test _simulate is called with the right slice
     split = 0.7
     split_idx = int(len(df) * split)
     df_is  = df.iloc[:split_idx]
-    df_oos = df.iloc[split_idx:]
 
     assert len(df_is) == split_idx
-    assert len(df_oos) == len(df) - split_idx
-    # IS and OOS dates must not overlap
-    assert df_is.index[-1] < df_oos.index[0]
+    # IS trading ends before OOS trading begins (split_idx is the boundary)
+    oos_start = max(0, split_idx - mod._WARMUP_BARS)
+    df_oos = df.iloc[oos_start:]
+    # OOS signal window starts at split_idx (after its own warmup)
+    assert df_is.index[-1] < df_oos.index[mod._WARMUP_BARS]
 
 
 def test_no_data_leak_train_to_test(tmp_path, monkeypatch):
+    """IS signals and OOS signals must not share any bars.
+    OOS shares warmup bars with IS (intentional — needed for EMA200 calibration),
+    but the trading window (post-warmup) must be strictly after IS ends.
+    """
     import core.backtester as mod
     monkeypatch.setattr(mod, "_MARKET_DIR", tmp_path / "data" / "market")
 
-    df = _make_ohlcv(300)
+    df = _make_ohlcv(600)
     d = tmp_path / "data" / "market" / "HOSE"
     d.mkdir(parents=True)
     df.to_parquet(d / "VCB.parquet")
 
     split = 0.7
     split_idx = int(len(df) * split)
-    df_is  = df.iloc[:split_idx]
-    df_oos = df.iloc[split_idx:]
 
-    # No date appears in both partitions
-    overlap = set(df_is.index) & set(df_oos.index)
-    assert len(overlap) == 0
+    # IS signal bars: [_WARMUP_BARS, split_idx)
+    is_signal_dates = set(df.index[mod._WARMUP_BARS:split_idx])
+
+    # OOS slice starts at split_idx - _WARMUP_BARS; signal bars start at split_idx
+    oos_start = max(0, split_idx - mod._WARMUP_BARS)
+    oos_signal_dates = set(df.index[oos_start + mod._WARMUP_BARS:])
+
+    overlap = is_signal_dates & oos_signal_dates
+    assert len(overlap) == 0, f"{len(overlap)} signal bars appear in both IS and OOS"
 
 
 def test_out_of_sample_metrics_in_report(tmp_path, monkeypatch):

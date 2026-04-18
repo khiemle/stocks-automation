@@ -161,6 +161,7 @@ class MomentumV1:
         confidence = _clamp(abs(score) * confidence_mult)
 
         indicators = {
+            "close": close_v,
             "ema20": ema20_v,
             "ema60": ema60_v,
             "ema200": ema200_v,

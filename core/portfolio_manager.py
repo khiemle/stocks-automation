@@ -14,8 +14,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-_COMMISSION_RATE = 0.0015   # 0.15% per side
-_SLIPPAGE_RATE   = 0.0010   # 0.10% per side
+from brokers.simulated_broker import _COMMISSION_RATE, _SLIPPAGE_RATE  # single source of truth
 _TOTAL_COST_RATE = (_COMMISSION_RATE + _SLIPPAGE_RATE) * 2  # both sides
 
 _DEFAULT_DB_PATH        = Path("data/trades.db")
