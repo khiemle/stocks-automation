@@ -163,7 +163,8 @@ class TestValidateData:
         monkeypatch.setattr(mod, "_MARKET_DIR", tmp_path / "data" / "market")
 
         df = _make_ohlcv(5, base_close=50000)
-        df.loc[df.index[2], "close"] = 54000  # 8% — above HOSE 7% band
+        # Simulate intraday spike: high = open × 1.10 (10% above open → > 7% band)
+        df.loc[df.index[2], "high"] = 55000  # open=50000, high=55000 → +10%
         self._write_parquet(tmp_path, "VCB", df)
 
         dm = DataManager(MagicMock())

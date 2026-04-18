@@ -163,17 +163,24 @@ class DataManager:
         if not zero_vol.empty:
             warnings.append(f"{len(zero_vol)} rows with volume=0")
 
-        # Price gaps > threshold
+        # Price gaps > threshold (close-to-close; may be triggered by dividend adjustment)
         band = _HNX_BAND if exchange == "HNX" else _HOSE_BAND
         pct_change = df["close"].pct_change().abs()
         gap_days = pct_change[pct_change > _GAP_THRESHOLD]
         if not gap_days.empty:
             warnings.append(f"{len(gap_days)} days with close gap > {_GAP_THRESHOLD:.0%}")
 
-        # Price out of daily band (close vs previous close)
-        out_of_band = pct_change[pct_change > band]
-        if not out_of_band.empty:
-            warnings.append(f"{len(out_of_band)} days with change > {band:.0%} (price band)")
+        # Price band: use intraday range (high/low vs open) — not close-to-close
+        # close-to-close triggers false positives on dividend ex-dates (adjusted prices)
+        if "open" in df.columns:
+            intraday_up = (df["high"] - df["open"]) / df["open"]
+            intraday_dn = (df["open"] - df["low"]) / df["open"]
+            intraday_max = pd.concat([intraday_up, intraday_dn], axis=1).max(axis=1)
+            out_of_band = intraday_max[intraday_max > band]
+            if not out_of_band.empty:
+                warnings.append(
+                    f"{len(out_of_band)} days with intraday range > {band:.0%} (price band)"
+                )
 
         return ValidationReport(symbol=symbol, warnings=warnings)
 
