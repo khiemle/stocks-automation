@@ -56,13 +56,25 @@ def test_sell_fills_at_next_bar_open():
 
 def test_t2_blocks_sell_within_2_business_days():
     broker = SimulatedBroker(initial_cash=10_000_000)
+    buy_date = "2024-01-15"  # Monday
     _place_buy(broker, qty=10)
-    today = date.today().isoformat()
-    broker.process_next_bar("VCB", _bar(50_000), today)
-    # Sell immediately (0 business days since buy)
-    result = _place_sell(broker, qty=10)
+    broker.process_next_bar("VCB", _bar(50_000), buy_date)
+
+    # Try to sell next day (T+1) — only 1 business day elapsed
+    result = broker.place_order("VCB", "S", 10, "ATO", None, "paper", sim_date="2024-01-16")
     assert result.status == "REJECTED"
     assert "T+2" in result.message
+
+
+def test_t2_allows_sell_after_2_business_days():
+    broker = SimulatedBroker(initial_cash=10_000_000)
+    buy_date = "2024-01-15"  # Monday
+    _place_buy(broker, qty=10)
+    broker.process_next_bar("VCB", _bar(50_000), buy_date)
+
+    # Sell on Wednesday (T+2) — 2 business days elapsed
+    result = broker.place_order("VCB", "S", 10, "ATO", None, "paper", sim_date="2024-01-17")
+    assert result.status == "PLACED"
 
 
 def test_commission_0_15pct_per_side():

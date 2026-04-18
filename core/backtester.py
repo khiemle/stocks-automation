@@ -234,7 +234,8 @@ class Backtester:
             if pending_signal == "BUY" and open_position is None:
                 qty = self._size(broker, bar, risk, symbol)
                 if qty > 0:
-                    broker.place_order(symbol, "B", qty, "ATO", None, "paper")
+                    broker.place_order(symbol, "B", qty, "ATO", None, "paper",
+                                       sim_date=bar_date)
                     broker.process_next_bar(symbol, bar, bar_date)
                     filled = [t for t in broker._filled if t.side == "B" and t.fill_date == bar_date]
                     if filled:
@@ -247,16 +248,21 @@ class Backtester:
                                              tp=tp, entry_date=bar_date, entry_bar=i)
                 pending_signal = None
 
-            # ── Fill pending SELL at T+1 open ────────────────────────
+            # ── Fill pending SELL at T+1 open (T+2 enforced) ────────
             elif pending_signal == "SELL" and open_position is not None:
-                broker.place_order(symbol, "S", open_position["qty"], "ATO", None, "paper")
-                broker.process_next_bar(symbol, bar, bar_date)
-                filled = [t for t in broker._filled if t.side == "S" and t.fill_date == bar_date]
-                if filled:
-                    xp = filled[-1].fill_price
-                    trades.append(self._make_trade(symbol, open_position, xp, bar_date))
-                    open_position = None
-                pending_signal = None
+                result = broker.place_order(symbol, "S", open_position["qty"],
+                                            "ATO", None, "paper", sim_date=bar_date)
+                if result.status == "REJECTED":
+                    # T+2 not satisfied yet — cancel signal, keep holding
+                    pending_signal = None
+                else:
+                    broker.process_next_bar(symbol, bar, bar_date)
+                    filled = [t for t in broker._filled if t.side == "S" and t.fill_date == bar_date]
+                    if filled:
+                        xp = filled[-1].fill_price
+                        trades.append(self._make_trade(symbol, open_position, xp, bar_date))
+                        open_position = None
+                    pending_signal = None
 
             # ── Intraday stop/TP check (never on entry bar) ──────────
             if open_position is not None and i > open_position["entry_bar"]:

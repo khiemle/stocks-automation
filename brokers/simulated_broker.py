@@ -63,11 +63,12 @@ class SimulatedBroker:
         order_type: str,
         price: float | None,
         account: str,
+        sim_date: str | None = None,    # override "today" for backtesting
     ) -> OrderResult:
         # T+2 guard: reject SELL if position was bought within 2 business days
         if side == "S" and symbol in self._positions:
             buy_date = pd.Timestamp(self._positions[symbol].fill_date)
-            today = pd.Timestamp(date.today())
+            today = pd.Timestamp(sim_date) if sim_date else pd.Timestamp(date.today())
             bd = len(pd.bdate_range(start=buy_date, end=today)) - 1
             if bd < 2:
                 msg = f"T+2 violation: {symbol} bought {buy_date.date()}, only {bd} business day(s) elapsed"
