@@ -168,6 +168,13 @@ def cmd_backtest(args):
     bt = Backtester(config)
     result = bt.run(symbols=[args.symbol], years=args.years)
     print(result.summary())
+    if args.trades and result.trades:
+        print("\n--- Trades ---")
+        print(f"{'Entry':10}  {'Exit':10}  {'Entry$':>10}  {'Exit$':>10}  {'Net P&L':>12}  Result")
+        for t in result.trades:
+            tag = "WIN " if t.net_pnl > 0 else "LOSS"
+            print(f"{t.entry_date}  {t.exit_date}  {t.entry_price:>10,.0f}  "
+                  f"{t.exit_price:>10,.0f}  {t.net_pnl:>+12,.0f}  {tag}")
 
 
 def cmd_backtest_all(args):
@@ -204,6 +211,7 @@ def main():
     p_bt = sub.add_parser("backtest")
     p_bt.add_argument("symbol")
     p_bt.add_argument("--years", type=int, default=3)
+    p_bt.add_argument("--trades", action="store_true", help="print individual trade list")
 
     p_bta = sub.add_parser("backtest-all")
     p_bta.add_argument("--walk-forward", action="store_true")

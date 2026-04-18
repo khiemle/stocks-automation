@@ -39,8 +39,12 @@ class BacktestMetrics:
     win_rate: float
     profit_factor: float
     total_trades: int
+    avg_win: float = 0.0     # average net P&L of winning trades
+    avg_loss: float = 0.0    # average net P&L of losing trades (negative)
+    trades_per_year: float = 0.0
 
     def summary(self) -> str:
+        ev = self.win_rate * self.avg_win + (1 - self.win_rate) * self.avg_loss
         lines = [
             f"Total Return    : {self.total_return:+.2%}",
             f"Sharpe Ratio    : {self.sharpe_ratio:.3f}",
@@ -49,7 +53,10 @@ class BacktestMetrics:
             f"Max Drawdown    : {self.max_drawdown:.2%}",
             f"Win Rate        : {self.win_rate:.2%}",
             f"Profit Factor   : {self.profit_factor:.3f}",
-            f"Total Trades    : {self.total_trades}",
+            f"Total Trades    : {self.total_trades}  ({self.trades_per_year:.1f}/year)",
+            f"Avg Win         : {self.avg_win:+,.0f} VND",
+            f"Avg Loss        : {self.avg_loss:+,.0f} VND",
+            f"Expected Value  : {ev:+,.0f} VND/trade",
         ]
         return "\n".join(lines)
 
@@ -67,7 +74,11 @@ class BacktestResult:
         return "\n".join(lines)
 
 
-def _compute_metrics(equity_curve: List[float], trades: List[TradeLog]) -> BacktestMetrics:
+def _compute_metrics(
+    equity_curve: List[float],
+    trades: List[TradeLog],
+    years: float = 1.0,
+) -> BacktestMetrics:
     if not equity_curve or len(equity_curve) < 2:
         return BacktestMetrics(0, 0, 0, 0, 0, 0, 0, 0)
 
@@ -95,12 +106,17 @@ def _compute_metrics(equity_curve: List[float], trades: List[TradeLog]) -> Backt
             mdd = dd
 
     # Win rate + profit factor
-    wins  = [t for t in trades if t.net_pnl > 0]
+    wins   = [t for t in trades if t.net_pnl > 0]
     losses = [t for t in trades if t.net_pnl < 0]
     win_rate = len(wins) / len(trades) if trades else 0.0
     gross_wins   = sum(t.net_pnl for t in wins)
     gross_losses = abs(sum(t.net_pnl for t in losses))
     pf = gross_wins / gross_losses if gross_losses > 0 else (float("inf") if gross_wins > 0 else 0.0)
+
+    avg_win  = (gross_wins  / len(wins))   if wins   else 0.0
+    avg_loss = (-gross_losses / len(losses)) if losses else 0.0  # negative
+    n_years  = max(len(equity_curve) / _PERIODS_PER_YEAR, years)
+    trades_per_year = len(trades) / n_years if n_years > 0 else 0.0
 
     return BacktestMetrics(
         total_return=total_return,
@@ -111,6 +127,9 @@ def _compute_metrics(equity_curve: List[float], trades: List[TradeLog]) -> Backt
         win_rate=win_rate,
         profit_factor=pf,
         total_trades=len(trades),
+        avg_win=avg_win,
+        avg_loss=avg_loss,
+        trades_per_year=trades_per_year,
     )
 
 
