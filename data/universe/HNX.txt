@@ -2,14 +2,10 @@
 # Lưu ý: yfinance hỗ trợ HNX rất hạn chế so với HOSE.
 # Khi dùng SSIDataClient (Phase 2+) thì expand danh sách này.
 # Last verified: 2026-04-18
+# Removed (delisted/no yfinance data): VCS, DHT, VGS, IDC, NTP
 PVS
 QNS
-VCS
 SJD
 DBC
-DHT
-VGS
 PTC
-IDC
-NTP
 BSI
