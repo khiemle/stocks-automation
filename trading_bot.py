@@ -65,6 +65,62 @@ def cmd_init_data(args):
     dm.init_data(years=args.years)
 
 
+def cmd_scan(args):
+    config = load_config()
+    from data_sources.yfinance_client import YFinanceClient
+    from data_sources.ssi_data_client import SSIDataClient
+    from core.data_manager import DataManager
+    from signals.momentum_v1 import MomentumV1
+
+    data_source_cls = {"YFINANCE": YFinanceClient, "SSI": SSIDataClient}[
+        config["data_source"]
+    ]
+    dm = DataManager(data_source_cls())
+    engine = MomentumV1()
+
+    symbols = [args.symbol] if args.symbol else (
+        dm.data_source.get_universe("HOSE") + dm.data_source.get_universe("HNX")
+    )
+
+    results = []
+    for sym in symbols:
+        try:
+            df = dm.get_ohlcv(sym, days=120)
+            result = engine.evaluate(df, foreign_flow=None)
+            results.append((sym, result))
+            if args.symbol:
+                ind = result.indicators
+                print(f"Symbol  : {sym}")
+                print(f"Action  : {result.action}  (score={result.score:+.3f}, confidence={result.confidence:.2f})")
+                print(f"Regime  : {result.regime}")
+                print(f"EMA20/60: {ind['ema20']:.0f} / {ind['ema60']:.0f}")
+                print(f"MACD    : {ind['macd']:.1f} (signal {ind['macd_signal']:.1f})")
+                print(f"RSI14   : {ind['rsi']:.1f}")
+                print(f"ADX14   : {ind['adx']:.1f}  (+DI {ind['adx_pos']:.1f} / -DI {ind['adx_neg']:.1f})")
+                print(f"ATR14   : {ind['atr']:.0f}")
+                vol_ratio = ind.get("vol_ratio")
+                print(f"Vol/MA20: {vol_ratio:.2f}x" if vol_ratio else "Vol/MA20: n/a")
+        except FileNotFoundError:
+            if args.symbol:
+                print(f"[ERROR] No data for {sym}. Run init-data first.")
+        except Exception as exc:
+            if args.symbol:
+                print(f"[ERROR] {sym}: {exc}")
+
+    if not args.symbol:
+        buys = [(s, r) for s, r in results if r.action == "BUY"]
+        sells = [(s, r) for s, r in results if r.action == "SELL"]
+        print(f"Scanned {len(results)} symbols — BUY: {len(buys)}, SELL: {len(sells)}, HOLD: {len(results)-len(buys)-len(sells)}")
+        if buys:
+            print("\n--- BUY signals ---")
+            for s, r in sorted(buys, key=lambda x: -x[1].score):
+                print(f"  {s:6s}  score={r.score:+.3f}  regime={r.regime}  RSI={r.indicators['rsi']:.0f}")
+        if sells:
+            print("\n--- SELL signals ---")
+            for s, r in sorted(sells, key=lambda x: x[1].score):
+                print(f"  {s:6s}  score={r.score:+.3f}  regime={r.regime}  RSI={r.indicators['rsi']:.0f}")
+
+
 def cmd_update_daily(args):
     config = load_config()
     from data_sources.yfinance_client import YFinanceClient
@@ -136,6 +192,9 @@ def main():
     p_init = sub.add_parser("init-data")
     p_init.add_argument("--years", type=int, default=5)
 
+    p_scan = sub.add_parser("scan")
+    p_scan.add_argument("--symbol", default=None, help="single symbol (omit = scan all universe)")
+
     sub.add_parser("update-daily")
 
     p_val = sub.add_parser("validate")
@@ -152,7 +211,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "update-daily":
+    if args.command == "scan":
+        cmd_scan(args)
+    elif args.command == "update-daily":
         cmd_update_daily(args)
     elif args.command == "validate":
         cmd_validate(args)
