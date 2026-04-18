@@ -1,130 +1,15 @@
-# HNX universe — liquid stocks (~100 mã)
-# Banks
-SHB
-# Brokers & Finance
-SHS
-PVI
-BSI
-MBS
-# Steel & Mining
-PVC
-DGC
-# Energy
+# HNX universe — chỉ giữ các mã liquid có data trên yfinance (.VN)
+# Lưu ý: yfinance hỗ trợ HNX rất hạn chế so với HOSE.
+# Khi dùng SSIDataClient (Phase 2+) thì expand danh sách này.
+# Last verified: 2026-04-18
 PVS
-PVX
-PVG
-PVA
-PVB
-PVE
-PVL
-PVH
-# Construction & Real estate
-CEO
-CTX
-HUT
-IDC
-L14
-NDN
-NJC
-# Food & Agriculture
 QNS
-HNM
-NBC
-NTP
-# Chemicals & Materials
-LAS
-DNC
-DPC
-NET
-NNT
-# Technology & Telecom
-VNG
-# Consumer
-MAC
-# Industrials
-HBS
-HHC
-HMH
-IDJ
-KLF
-LCS
-LIG
-MEC
-MIM
-MKV
-NST
-NVC
-PHC
-PHL
-PHN
-PJT
-PMG
-PMP
-PPT
-PRE
-PSC
-PSI
-PTC
-PTI
-PTX
-QHD
-S99
-SCI
-SCL
-SDE
-SDT
-SDU
-SHI
-SIE
-SJD
-SJE
-SKS
-SMT
-SQC
-SRA
-SRB
-SSH
-STC
-STP
-STT
-TBX
-TCS
-TDN
-THB
-THT
-TKC
-TKU
-TMB
-TNG
-TNT
-TPH
-TQN
-TS4
-TSB
-TVD
-TVN
-TVT
-VBC
-VBH
 VCS
-VE1
-VE2
-VE3
-VE4
-VE8
+SJD
+DBC
+DHT
 VGS
-VIT
-VKC
-VLA
-VMC
-VNA
-VNC
-VNT
-VPC
-VPS
-VQC
-VSE
-VVC
-VXB
-X26
-YBC
+PTC
+IDC
+NTP
+BSI

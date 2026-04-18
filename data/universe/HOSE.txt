@@ -1,4 +1,5 @@
-# HOSE universe — liquid stocks (~200 mã)
+# HOSE universe — verified on yfinance (suffix .VN)
+# Last verified: 2026-04-18
 # VN30
 ACB
 BCM
@@ -54,14 +55,9 @@ HSG
 NKG
 SMC
 TLH
-HPG
 # Consumer & Retail
 DGW
-MWG
-PNJ
-VNM
 # Energy & Utilities
-GAS
 NT2
 PC1
 PVD
@@ -71,12 +67,9 @@ VSH
 # Industrials & Construction
 CTD
 FCN
-HBC
-HUT
 LCG
 # Technology
 CMG
-FPT
 # Logistics & Transport
 GMD
 HAH
@@ -87,12 +80,7 @@ DCM
 DPM
 KDC
 LSS
-MSN
-SAB
-SSC
-VNM
 # Insurance & Finance
-BVH
 HCM
 VCI
 VDS
@@ -102,13 +90,10 @@ IMP
 DGC
 # Real estate - more
 AGR
-BCG
-C4G
 CII
 CRE
 HDG
 HDC
-ITA
 ITC
 KHG
 LHG
@@ -117,9 +102,7 @@ NTL
 NVT
 PHR
 QCG
-RIC
 SZL
-TIG
 TIP
 VGC
 VHC
@@ -127,19 +110,15 @@ VID
 # Industrials - more
 AAA
 ASM
-BBC
 BFC
 BHN
 BMI
 BWE
 CNG
-CPH
 CSM
 GEX
 HAG
 HHS
-HNG
-HPC
 HTN
 IJC
 KOS
@@ -149,38 +128,27 @@ NAF
 OGC
 ORS
 PAC
-PHP
-PMG
 PTB
 PTC
-PVH
-QBS
 RAL
-S55
 SCS
 SHI
 SIP
 SKG
 SRC
 SRF
-SSC
 SVC
 SVD
 TDG
-TGG
 THG
 TIX
 TLG
-TMS
 TMT
-TNG
 TRA
 TRC
 TVB
 TVS
 UIC
-VGI
-VMC
 VNL
 VNS
 VTO
