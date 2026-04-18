@@ -38,8 +38,9 @@ class MomentumV1:
         low = df["low"]
         volume = df["volume"]
 
-        ema20 = EMAIndicator(close, window=20).ema_indicator()
-        ema60 = EMAIndicator(close, window=60).ema_indicator()
+        ema20  = EMAIndicator(close, window=20).ema_indicator()
+        ema60  = EMAIndicator(close, window=60).ema_indicator()
+        ema200 = EMAIndicator(close, window=200).ema_indicator()
         macd_obj = MACD(close)
         macd_line = macd_obj.macd()
         macd_sig = macd_obj.macd_signal()
@@ -51,8 +52,9 @@ class MomentumV1:
         atr = AverageTrueRange(high, low, close, window=14).average_true_range()
         vol_ma20 = volume.rolling(20).mean()
 
-        ema20_v = float(ema20.iloc[-1])
-        ema60_v = float(ema60.iloc[-1])
+        ema20_v  = float(ema20.iloc[-1])
+        ema60_v  = float(ema60.iloc[-1])
+        ema200_v = float(ema200.iloc[-1]) if not pd.isna(ema200.iloc[-1]) else None
         macd_v = float(macd_line.iloc[-1])
         macd_sig_v = float(macd_sig.iloc[-1])
         rsi_v = float(rsi.iloc[-1])
@@ -144,6 +146,11 @@ class MomentumV1:
         if rsi_v > 75:
             score = min(score, _BUY_THRESHOLD - 0.01)
 
+        # EMA200 trend filter: only BUY when price is above long-term trend
+        # Skipped when EMA200 is unavailable (< 200 bars of history)
+        if ema200_v is not None and close_v < ema200_v:
+            score = min(score, _BUY_THRESHOLD - 0.01)
+
         if score > _BUY_THRESHOLD:
             action = "BUY"
         elif score < _SELL_THRESHOLD:
@@ -156,6 +163,7 @@ class MomentumV1:
         indicators = {
             "ema20": ema20_v,
             "ema60": ema60_v,
+            "ema200": ema200_v,
             "macd": macd_v,
             "macd_signal": macd_sig_v,
             "rsi": rsi_v,

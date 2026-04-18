@@ -93,11 +93,16 @@ def cmd_scan(args):
                 print(f"Symbol  : {sym}")
                 print(f"Action  : {result.action}  (score={result.score:+.3f}, confidence={result.confidence:.2f})")
                 print(f"Regime  : {result.regime}")
-                print(f"EMA20/60: {ind['ema20']:.0f} / {ind['ema60']:.0f}")
+                ema200 = ind.get("ema200")
+                ema200_str = f"{ema200:.0f}" if ema200 else "n/a (< 200 bars)"
+                print(f"EMA20/60/200: {ind['ema20']:.0f} / {ind['ema60']:.0f} / {ema200_str}")
+                above = "✓ above EMA200" if ema200 and float(ind.get("ema20", 0)) > ema200 else ("✗ below EMA200 — BUY blocked" if ema200 else "")
                 print(f"MACD    : {ind['macd']:.1f} (signal {ind['macd_signal']:.1f})")
                 print(f"RSI14   : {ind['rsi']:.1f}")
                 print(f"ADX14   : {ind['adx']:.1f}  (+DI {ind['adx_pos']:.1f} / -DI {ind['adx_neg']:.1f})")
                 print(f"ATR14   : {ind['atr']:.0f}")
+                if above:
+                    print(f"Trend   : {above}")
                 vol_ratio = ind.get("vol_ratio")
                 print(f"Vol/MA20: {vol_ratio:.2f}x" if vol_ratio else "Vol/MA20: n/a")
         except FileNotFoundError:
