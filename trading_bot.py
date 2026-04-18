@@ -65,6 +65,24 @@ def cmd_init_data(args):
     dm.init_data(years=args.years)
 
 
+def cmd_update_daily(args):
+    config = load_config()
+    from data_sources.yfinance_client import YFinanceClient
+    from data_sources.ssi_data_client import SSIDataClient
+    from core.data_manager import DataManager
+
+    data_source_cls = {"YFINANCE": YFinanceClient, "SSI": SSIDataClient}[
+        config["data_source"]
+    ]
+    dm = DataManager(data_source_cls())
+    status = dm.update_daily()
+    ok = sum(1 for v in status.values() if v)
+    fail = [s for s, v in status.items() if not v]
+    print(f"update-daily: {ok}/{len(status)} success")
+    if fail:
+        print(f"Failed: {fail}")
+
+
 def cmd_validate(args):
     config = load_config()
     from data_sources.yfinance_client import YFinanceClient
@@ -118,6 +136,8 @@ def main():
     p_init = sub.add_parser("init-data")
     p_init.add_argument("--years", type=int, default=5)
 
+    sub.add_parser("update-daily")
+
     p_val = sub.add_parser("validate")
     p_val.add_argument("--symbol", default=None, help="single symbol (omit = all)")
     p_val.add_argument("--exchange", default="HOSE", choices=["HOSE", "HNX"])
@@ -132,7 +152,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "validate":
+    if args.command == "update-daily":
+        cmd_update_daily(args)
+    elif args.command == "validate":
         cmd_validate(args)
     elif args.command == "start":
         cmd_start(args)
