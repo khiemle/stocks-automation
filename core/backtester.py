@@ -374,6 +374,8 @@ class Backtester:
                             trigger = ep + risk.ATR_TRAIL_TRIGGER * atr_e
                             if not open_position["trail_active"] and hi >= trigger:
                                 open_position["trail_active"] = True
+                                # Breakeven stop: kéo stop lên entry khi +1R đạt được
+                                open_position["stop"] = max(open_position["stop"], ep)
                             if open_position["trail_active"]:
                                 new_stop = hi - risk.ATR_TRAIL_MULT * atr_e
                                 if new_stop > open_position["stop"]:

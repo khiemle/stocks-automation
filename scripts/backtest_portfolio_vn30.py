@@ -287,6 +287,8 @@ def run_portfolio(
             trigger = pos.entry_price + risk.ATR_TRAIL_TRIGGER * pos.entry_atr
             if not pos.trail_active and hi >= trigger:
                 pos.trail_active = True
+                # Breakeven stop: kéo stop lên entry khi +1R đạt được → loại bỏ loss từ winner
+                pos.stop = max(pos.stop, pos.entry_price)
             if pos.trail_active:
                 new_stop = hi - risk.ATR_TRAIL_MULT * pos.entry_atr
                 if new_stop > pos.stop:
