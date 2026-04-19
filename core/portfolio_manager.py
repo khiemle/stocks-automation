@@ -80,6 +80,8 @@ class Position:
     take_profit: float
     buy_date: str           # ISO date
     engine: str = ""
+    entry_atr: float = 0.0  # ATR at entry — used for trailing stop distance
+    trail_active: bool = False  # True once price crossed +1R
 
     def market_value(self, current_price: float) -> float:
         return self.qty * current_price
@@ -114,11 +116,11 @@ class PortfolioManager:
     def __init__(
         self,
         initial_cash: float = 500_000_000,
-        db_path: Path = _DEFAULT_DB_PATH,
-        portfolio_path: Path = _DEFAULT_PORTFOLIO_PATH,
+        db_path: Path | None = None,
+        portfolio_path: Path | None = None,
     ) -> None:
-        self._db_path = Path(db_path)
-        self._portfolio_path = Path(portfolio_path)
+        self._db_path = Path(db_path) if db_path is not None else _DEFAULT_DB_PATH
+        self._portfolio_path = Path(portfolio_path) if portfolio_path is not None else _DEFAULT_PORTFOLIO_PATH
 
         self._cash: float = initial_cash
         self._positions: Dict[str, Position] = {}

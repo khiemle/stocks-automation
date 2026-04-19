@@ -34,6 +34,10 @@ class DataManager:
     def __init__(self, data_source: DataSourceProtocol) -> None:
         self._src = data_source
 
+    @property
+    def data_source(self) -> DataSourceProtocol:
+        return self._src
+
     # ------------------------------------------------------------------
     # Public read interface (hot path — reads from local Parquet)
     # ------------------------------------------------------------------

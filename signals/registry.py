@@ -1,2 +1,7 @@
-# Placeholder — implemented in Week 6
-ENGINE_REGISTRY: dict = {}
+from __future__ import annotations
+
+from signals.momentum_v1 import MomentumV1
+
+ENGINE_REGISTRY: dict = {
+    "MomentumV1": MomentumV1,
+}
