@@ -52,10 +52,12 @@ def _make_df(
     )
 
 
-def _make_trending_df(n: int = 120) -> pd.DataFrame:
+def _make_trending_df(n: int = 120, vol_breakout: bool = True) -> pd.DataFrame:
     """Strong uptrend with pullbacks: MA20>MA60, MACD bullish, ADX>25, RSI 55-70.
 
     Pattern: 3 up days (+0.3% each), 1 pullback (-0.5%) → RSI ≈ 64.
+    If vol_breakout=True, last 3 bars have volume 2.5x baseline (simulates genuine
+    momentum with volume confirm — needed to pass the BUY gate).
     """
     close = [50_000.0]
     for i in range(n - 1):
@@ -65,6 +67,8 @@ def _make_trending_df(n: int = 120) -> pd.DataFrame:
     high = close * 1.002
     low = close * 0.998
     volume = np.full(n, 600_000.0)
+    if vol_breakout:
+        volume[-3:] = 1_500_000.0  # 2.5x spike → ratio ~1.8 vs MA20
     idx = pd.date_range("2025-01-02", periods=n, freq="B")
     return pd.DataFrame(
         {"open": close, "high": high, "low": low, "close": close, "volume": volume},
@@ -192,6 +196,28 @@ def test_low_volume_reduces_score():
     r_high = _ENGINE.evaluate(df_high, foreign_flow=None)
     assert r_high.score >= r_low.score, (
         f"High volume score {r_high.score} should be >= low volume {r_low.score}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Volume breakout hard gate (requires vol >= 1.5 × vol_MA20 on signal bar)
+# ---------------------------------------------------------------------------
+
+def test_volume_breakout_blocks_buy_when_vol_below_1_5x():
+    """Trending pattern nhưng vol_ratio < 1.5 → score bị clamp < BUY_THRESHOLD."""
+    df = _make_trending_df(vol_breakout=False)  # all bars at 600k, ratio ≈ 1.0
+    result = _ENGINE.evaluate(df, foreign_flow=None)
+    assert result.action != "BUY", (
+        f"vol_ratio ≈ 1.0 phải block BUY, got score={result.score}"
+    )
+
+
+def test_volume_breakout_allows_buy_when_spike():
+    """Trending + vol spike 2.5× → gate thoả → BUY."""
+    df = _make_trending_df(vol_breakout=True)
+    result = _ENGINE.evaluate(df, foreign_flow=None)
+    assert result.action == "BUY", (
+        f"Volume breakout trending phải BUY, got action={result.action} score={result.score}"
     )
 
 

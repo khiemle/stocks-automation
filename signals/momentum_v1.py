@@ -21,6 +21,7 @@ _BASE_WEIGHTS: dict[str, float] = {
 
 _MIN_VOLUME_MA20 = 100_000
 _MIN_PRICE = 5_000
+_VOL_BREAKOUT_MIN = 1.5  # hard gate: signal bar vol >= 1.5 × vol_MA20 mới BUY
 
 
 class MomentumV1:
@@ -149,6 +150,11 @@ class MomentumV1:
         # EMA200 trend filter: only BUY when price is above long-term trend
         # Skipped when EMA200 is unavailable (< 200 bars of history)
         if ema200_v is not None and close_v < ema200_v:
+            score = min(score, _BUY_THRESHOLD - 0.01)
+
+        # Volume breakout gate: chặn BUY khi volume bar hiện tại chưa đủ mạnh.
+        # Momentum không có volume confirm → dễ chop → stop-out.
+        if vol_ma20_v > 0 and vol_v / vol_ma20_v < _VOL_BREAKOUT_MIN:
             score = min(score, _BUY_THRESHOLD - 0.01)
 
         if score > _BUY_THRESHOLD:
