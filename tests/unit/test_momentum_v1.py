@@ -306,6 +306,34 @@ def test_existing_position_excluded():
     assert "portfolio" in reason.lower()
 
 
+# ---------------------------------------------------------------------------
+# MACD zero-line gate
+# ---------------------------------------------------------------------------
+
+def test_macd_below_zero_blocks_buy():
+    """MACD line < 0 → hard gate chặn BUY kể cả khi volume spike."""
+    from ta.trend import MACD as _MACD
+    # Strong uptrend 150 bars → decline 80 bars: EMA200 may still be OK but MACD < 0
+    n = 230
+    close = np.zeros(n, dtype=float)
+    close[:150] = np.linspace(50_000, 80_000, 150)
+    close[150:] = np.linspace(80_000, 58_000, 80)
+    high = close * 1.002
+    low = close * 0.998
+    volume = np.full(n, 500_000.0)
+    volume[-3:] = 1_500_000.0  # volume spike — pass vol gate
+    idx = pd.date_range("2023-01-02", periods=n, freq="B")
+    df = pd.DataFrame(
+        {"open": close, "high": high, "low": low, "close": close, "volume": volume},
+        index=idx,
+    )
+    macd_v = float(_MACD(pd.Series(close, index=idx)).macd().iloc[-1])
+    assert macd_v < 0, f"Test setup: MACD phải < 0, got {macd_v:.2f}"
+    result = _ENGINE.evaluate(df, foreign_flow=None)
+    assert result.action != "BUY", f"MACD<0 gate phải block BUY, score={result.score:.3f}"
+    assert result.score < 0.55
+
+
 def test_t2_lock_excluded():
     """Symbol in t2_lock_symbols → not eligible."""
     df = _make_trending_df()

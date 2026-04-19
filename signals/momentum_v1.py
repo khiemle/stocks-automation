@@ -164,6 +164,11 @@ class MomentumV1:
         if market_context is not None and market_context.get("macro_above_ema50") is False:
             score = min(score, _BUY_THRESHOLD - 0.01)
 
+        # MACD zero-line gate: chặn BUY khi MACD line < 0 (không chỉ dựa vào MACD > signal).
+        # Gate cũ cho phép BUY khi cả MACD & signal đều âm — tức là downtrend chưa đảo chiều.
+        if macd_v < 0:
+            score = min(score, _BUY_THRESHOLD - 0.01)
+
         if score > _BUY_THRESHOLD:
             action = "BUY"
         elif score < _SELL_THRESHOLD:
