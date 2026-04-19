@@ -47,9 +47,10 @@ class Position:
     qty: int
     entry_price: float
     stop: float
-    tp: float
+    entry_atr: float         # ATR at entry — frozen for +1R trigger
     entry_date: pd.Timestamp
-    entry_idx: int  # global date index
+    entry_idx: int           # global date index
+    trail_active: bool = False  # becomes True once high reaches entry + 1R
 
 
 @dataclass
@@ -238,7 +239,7 @@ def run_portfolio(
                     qty=qty,
                     entry_price=open_p,
                     stop=open_p - risk.ATR_STOP_MULT * atr_v,
-                    tp=open_p + risk.ATR_TP_MULT * atr_v,
+                    entry_atr=atr_v,
                     entry_date=date,
                     entry_idx=idx,
                 )
@@ -246,7 +247,7 @@ def run_portfolio(
         pending_buys = []
 
         # ─────────────────────────────────────────────────────
-        # C) Intraday stop/TP check for open positions (T+2 only)
+        # C) Intraday stop check + trailing stop update (T+2 only)
         # ─────────────────────────────────────────────────────
         to_close: list[tuple[str, float, str]] = []
         for sym, pos in positions.items():
@@ -261,10 +262,20 @@ def run_portfolio(
             bar = df.loc[date]
             lo = float(bar["low"])
             hi = float(bar["high"])
+            # Stop check always fires first (conservative when both low ≤ stop
+            # and high ≥ trigger on same bar)
             if lo <= pos.stop:
-                to_close.append((sym, pos.stop, "STOP"))
-            elif hi >= pos.tp:
-                to_close.append((sym, pos.tp, "TP"))
+                reason = "TRAIL" if pos.trail_active else "STOP"
+                to_close.append((sym, pos.stop, reason))
+                continue
+            # Trail activation: high crossed entry + 1R
+            trigger = pos.entry_price + risk.ATR_TRAIL_TRIGGER * pos.entry_atr
+            if not pos.trail_active and hi >= trigger:
+                pos.trail_active = True
+            if pos.trail_active:
+                new_stop = hi - risk.ATR_TRAIL_MULT * pos.entry_atr
+                if new_stop > pos.stop:
+                    pos.stop = new_stop
         for sym, exit_p, reason in to_close:
             pos = positions[sym]
             proceeds = pos.qty * exit_p * (1 - _COMMISSION_RATE - _SLIPPAGE_RATE)

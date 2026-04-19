@@ -312,9 +312,9 @@ class Backtester:
                         qty_f   = filled[-1].quantity
                         atr_val = float(atr_series.iloc[i]) if not np.isnan(atr_series.iloc[i]) else fp * 0.02
                         stop    = fp - risk.ATR_STOP_MULT * atr_val
-                        tp      = fp + risk.ATR_TP_MULT   * atr_val
                         open_position = dict(entry_price=fp, qty=qty_f, stop=stop,
-                                             tp=tp, entry_date=bar_date, entry_bar=i)
+                                             entry_atr=atr_val, trail_active=False,
+                                             entry_date=bar_date, entry_bar=i)
                 pending_signal = None
 
             # ── Fill pending SELL at T+1 open (T+2 enforced) ────────
@@ -348,12 +348,17 @@ class Backtester:
                         broker._cash += open_position["qty"] * exit_price * (1 - _COMMISSION_RATE - _SLIPPAGE_RATE)
                         broker._positions.pop(symbol, None)
                         open_position = None
-                    elif hi >= open_position["tp"]:
-                        exit_price = open_position["tp"]
-                        trades.append(self._make_trade(symbol, open_position, exit_price, bar_date))
-                        broker._cash += open_position["qty"] * exit_price * (1 - _COMMISSION_RATE - _SLIPPAGE_RATE)
-                        broker._positions.pop(symbol, None)
-                        open_position = None
+                    else:
+                        # Trailing stop: activate when high crosses +1R, then ratchet
+                        ep = open_position["entry_price"]
+                        atr_e = open_position["entry_atr"]
+                        trigger = ep + risk.ATR_TRAIL_TRIGGER * atr_e
+                        if not open_position["trail_active"] and hi >= trigger:
+                            open_position["trail_active"] = True
+                        if open_position["trail_active"]:
+                            new_stop = hi - risk.ATR_TRAIL_MULT * atr_e
+                            if new_stop > open_position["stop"]:
+                                open_position["stop"] = new_stop
 
             # ── Generate signal on close of bar i ───────────────────
             # Only signal if position was open/closed BEFORE this bar

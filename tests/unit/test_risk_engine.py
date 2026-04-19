@@ -159,6 +159,28 @@ def test_circuit_breaker_no_trigger_below_150pct():
 
 
 # ---------------------------------------------------------------------------
+# Trailing stop constants
+# ---------------------------------------------------------------------------
+
+def test_trailing_stop_constants_match_spec():
+    """Doc cam kết trigger = 1R (1.5×ATR) và trail distance = 2×ATR."""
+    assert RiskEngine.ATR_TRAIL_TRIGGER == RiskEngine.ATR_STOP_MULT  # 1R = stop distance
+    assert RiskEngine.ATR_TRAIL_MULT == 2.0
+
+
+def test_trailing_stop_update_ratchets_monotonically():
+    """trailing_stop_update chỉ tăng, không giảm."""
+    s1 = RiskEngine._engine().trailing_stop_update if hasattr(RiskEngine, "_engine") else None
+    eng = _engine()
+    # current=47, price goes up → new stop increases
+    s1 = eng.trailing_stop_update(current_stop=47_000, current_price=50_000, atr=1_000)
+    assert s1 >= 47_000
+    # price then drops → new stop must not decrease below s1
+    s2 = eng.trailing_stop_update(current_stop=s1, current_price=49_000, atr=1_000)
+    assert s2 == s1
+
+
+# ---------------------------------------------------------------------------
 # Weekly loss limits
 # ---------------------------------------------------------------------------
 

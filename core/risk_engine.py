@@ -19,7 +19,9 @@ class RiskEngine:
     HOSE_BAND = 0.07
     HNX_BAND = 0.10
     ATR_STOP_MULT = 1.5
-    ATR_TP_MULT = 4.5
+    ATR_TP_MULT = 4.5        # deprecated — kept for backwards compat; trailing stop superseded fixed TP
+    ATR_TRAIL_MULT = 2.0     # trailing stop distance once +1R reached
+    ATR_TRAIL_TRIGGER = 1.5  # activate trailing when gain >= 1.5 × ATR (= 1R)
     RISK_PCT = 0.02          # 2% risk per trade
     MAX_POSITION_PCT = 0.20  # max 20% capital per position (half-Kelly)
     MAX_ADV_PCT = 0.05       # max 5% of average daily volume
