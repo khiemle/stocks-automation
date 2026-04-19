@@ -213,21 +213,21 @@
 ### Week 7 — Streamlit Dashboard
 
 **Implement:**
-- [ ] Khởi tạo `streamlit_app.py` — read-only từ DB/JSON, viết config.json và signal_queue.json
-- [ ] Trang 1: Dashboard — equity, positions table, circuit breaker status, equity curve vs VN-Index
-- [ ] Trang 2: Signal Queue — PENDING (EOD + INTRADAY), APPROVE/REJECT, chart overlay
-- [ ] Trang 2: Watchlist manager — add/remove, tối đa 10 mã, lưu config.json
-- [ ] Trang 3: Config — bot control, capital/signal/risk params, data_source toggle, save/reset
-- [ ] Trang 4: Reports — metrics, trade log, export CSV, benchmark chart
-- [ ] Trang 5: Backtest — chạy từ UI, hiển thị kết quả in/out-of-sample
+- [x] Khởi tạo `streamlit_app.py` — read-only từ DB/JSON, viết config.json và signal_queue.json
+- [x] Trang 1: Dashboard — equity, positions table, circuit breaker status, equity curve vs VN-Index
+- [x] Trang 2: Signal Queue — PENDING (EOD + INTRADAY), APPROVE/REJECT, chart overlay
+- [x] Trang 2: Watchlist manager — add/remove, tối đa 10 mã, lưu config.json
+- [x] Trang 3: Config — bot control, capital/signal/risk params, data_source toggle, save/reset
+- [x] Trang 4: Reports — metrics, trade log, export CSV, benchmark chart
+- [x] Trang 5: Backtest — chạy từ UI, hiển thị kết quả in/out-of-sample
 
 **Unit Tests** (`tests/unit/test_streamlit_helpers.py`):
-- [ ] `test_approve_signal_updates_status_to_approved` — gọi helper function → status = APPROVED trong file
-- [ ] `test_reject_signal_updates_status_to_rejected`
-- [ ] `test_add_to_watchlist_saves_to_config` — thêm mã → config.json có mã đó
-- [ ] `test_watchlist_max_10_enforced` — thêm mã thứ 11 → raise error
-- [ ] `test_save_config_persists_all_fields` — save → reload → tất cả fields giữ nguyên
-- [ ] `test_streamlit_reads_only_no_api_call` — mock broker + data_source → không có HTTP call khi load UI
+- [x] `test_approve_signal_updates_status_to_approved` — gọi helper function → status = APPROVED trong file
+- [x] `test_reject_signal_updates_status_to_rejected`
+- [x] `test_add_to_watchlist_saves_to_config` — thêm mã → config.json có mã đó
+- [x] `test_watchlist_max_10_enforced` — thêm mã thứ 11 → raise error
+- [x] `test_save_config_persists_all_fields` — save → reload → tất cả fields giữ nguyên
+- [x] `test_streamlit_reads_only_no_api_call` — mock broker + data_source → không có HTTP call khi load UI
 
 **Manual Test Checklist** (`test-plan.md §Milestone 6`):
 - [ ] Trang 1: equity đúng, circuit breaker đổi màu, positions table đúng, chart render
