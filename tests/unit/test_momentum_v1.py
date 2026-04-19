@@ -334,6 +334,44 @@ def test_macd_below_zero_blocks_buy():
     assert result.score < 0.55
 
 
+# ---------------------------------------------------------------------------
+# Relative strength gate
+# ---------------------------------------------------------------------------
+
+def test_rs_below_basket_blocks_buy():
+    """Symbol underperforms VN30 basket (20d) → hard gate chặn BUY."""
+    df = _make_trending_df()
+    # Basket return > symbol return → underperforming
+    ctx = {"macro_above_ema50": True, "basket_return_20d": 0.15}  # basket +15%
+    # Symbol last 21 bars: close[-21]=close[0] approximately flat relative to basket
+    result = _ENGINE.evaluate(df, foreign_flow=None, market_context=ctx)
+    assert result.action != "BUY", (
+        f"RS gate: symbol underperforming basket phải block BUY, score={result.score:.3f}"
+    )
+
+
+def test_rs_above_basket_allows_buy():
+    """Symbol outperforms VN30 basket (20d) → RS gate không chặn."""
+    df = _make_trending_df()
+    # Basket return < symbol return → RS gate passes
+    ctx = {"macro_above_ema50": True, "basket_return_20d": -0.10}  # basket −10%
+    result = _ENGINE.evaluate(df, foreign_flow=None, market_context=ctx)
+    # With strong trending data + low basket return, RS gate should pass
+    assert result.action == "BUY", (
+        f"Symbol outperforming basket → should BUY, score={result.score:.3f}"
+    )
+
+
+def test_rs_gate_permissive_when_basket_return_absent():
+    """Khi basket_return_20d không có trong context → RS gate bỏ qua (permissive)."""
+    df = _make_trending_df()
+    ctx = {"macro_above_ema50": True}  # no basket_return_20d
+    result = _ENGINE.evaluate(df, foreign_flow=None, market_context=ctx)
+    assert result.action == "BUY", (
+        f"RS gate nên permissive khi thiếu basket_return_20d, score={result.score:.3f}"
+    )
+
+
 def test_t2_lock_excluded():
     """Symbol in t2_lock_symbols → not eligible."""
     df = _make_trending_df()

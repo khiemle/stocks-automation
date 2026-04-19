@@ -169,6 +169,15 @@ class MomentumV1:
         if macd_v < 0:
             score = min(score, _BUY_THRESHOLD - 0.01)
 
+        # Relative strength gate: chặn BUY khi symbol underperform VN30 basket (20 ngày).
+        # Swing momentum cần leadership — BUY leader thay vì laggard giảm stop-out rate.
+        # Bỏ qua khi basket_return_20d không có trong market_context (permissive).
+        if market_context is not None and "basket_return_20d" in market_context:
+            if len(close) >= 21:
+                sym_return_20d = float(close.iloc[-1] / close.iloc[-21] - 1.0)
+                if sym_return_20d <= market_context["basket_return_20d"]:
+                    score = min(score, _BUY_THRESHOLD - 0.01)
+
         if score > _BUY_THRESHOLD:
             action = "BUY"
         elif score < _SELL_THRESHOLD:

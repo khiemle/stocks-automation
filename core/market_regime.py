@@ -99,6 +99,25 @@ class MarketRegime:
         except (KeyError, IndexError):
             return True
 
+    def basket_return_20d(self, date) -> float | None:
+        """Return the basket's 20-trading-day return ending at `date`. None if unavailable."""
+        try:
+            ts = pd.Timestamp(date) if not isinstance(date, pd.Timestamp) else date
+            idx = self._basket.index.searchsorted(ts, side="right") - 1
+            if idx < 20:
+                return None
+            prev = float(self._basket.iloc[idx - 20])
+            curr = float(self._basket.iloc[idx])
+            if prev <= 0:
+                return None
+            return curr / prev - 1.0
+        except (IndexError, KeyError):
+            return None
+
     def context(self, date) -> dict:
         """Convenience: return dict ready to pass to evaluate(market_context=...)."""
-        return {"macro_above_ema50": self.is_bullish(date)}
+        result: dict = {"macro_above_ema50": self.is_bullish(date)}
+        b_ret = self.basket_return_20d(date)
+        if b_ret is not None:
+            result["basket_return_20d"] = b_ret
+        return result
