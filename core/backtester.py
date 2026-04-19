@@ -43,6 +43,8 @@ class BacktestMetrics:
     avg_win: float = 0.0     # average net P&L of winning trades
     avg_loss: float = 0.0    # average net P&L of losing trades (negative)
     trades_per_year: float = 0.0
+    benchmark_return: Optional[float] = None  # buy-hold of same symbol over same window
+    alpha: Optional[float] = None             # total_return - benchmark_return
 
     def summary(self) -> str:
         ev = self.win_rate * self.avg_win + (1 - self.win_rate) * self.avg_loss
@@ -59,6 +61,9 @@ class BacktestMetrics:
             f"Avg Loss        : {self.avg_loss:+,.0f} VND",
             f"Expected Value  : {ev:+,.0f} VND/trade",
         ]
+        if self.benchmark_return is not None:
+            lines.append(f"Buy & Hold      : {self.benchmark_return:+.2%}")
+            lines.append(f"Alpha (vs B&H)  : {self.alpha:+.2%}")
         return "\n".join(lines)
 
 
@@ -73,6 +78,19 @@ class BacktestResult:
         if self.out_of_sample:
             lines += ["", "=== Out-of-Sample ===", self.out_of_sample.summary()]
         return "\n".join(lines)
+
+
+def _buy_hold_return(df: pd.DataFrame) -> float:
+    """Buy at close of warmup bar, hold to end of df, with 1 round-trip of commission+slippage."""
+    if len(df) <= _WARMUP_BARS:
+        return 0.0
+    entry = float(df["close"].iloc[_WARMUP_BARS])
+    exit_ = float(df["close"].iloc[-1])
+    if entry <= 0:
+        return 0.0
+    gross = (exit_ - entry) / entry
+    costs = 2 * (_COMMISSION_RATE + _SLIPPAGE_RATE)  # buy + sell
+    return gross - costs
 
 
 def _compute_metrics(
@@ -157,6 +175,7 @@ class Backtester:
     def run(self, symbols: List[str], years: int = 3) -> BacktestResult:
         all_trades: List[TradeLog] = []
         equity_curve: List[float] = []
+        benchmarks: List[float] = []
 
         for sym in symbols:
             df = self._load(sym, years)
@@ -165,6 +184,7 @@ class Backtester:
                 continue
             trades, eq = self._simulate(sym, df)
             all_trades.extend(trades)
+            benchmarks.append(_buy_hold_return(df))
             if not equity_curve:
                 equity_curve = eq
             else:
@@ -177,6 +197,9 @@ class Backtester:
             equity_curve = [self._initial_cash]
 
         metrics = _compute_metrics(equity_curve, all_trades)
+        if benchmarks:
+            metrics.benchmark_return = float(np.mean(benchmarks))
+            metrics.alpha = metrics.total_return - metrics.benchmark_return
         return BacktestResult(in_sample=metrics, out_of_sample=None, trades=all_trades)
 
     def run_all(self, walk_forward: bool = False, split: float = 0.7) -> BacktestResult:
@@ -193,6 +216,8 @@ class Backtester:
         all_oos_trades: List[TradeLog] = []
         all_is_eq: List[float] = []
         all_oos_eq: List[float] = []
+        is_benchmarks: List[float] = []
+        oos_benchmarks: List[float] = []
 
         for sym in symbols:
             df = self._load(sym, years=5)
@@ -210,6 +235,8 @@ class Backtester:
 
             all_is_trades.extend(is_trades)
             all_oos_trades.extend(oos_trades)
+            is_benchmarks.append(_buy_hold_return(df_is))
+            oos_benchmarks.append(_buy_hold_return(df_oos))
             if not all_is_eq:
                 all_is_eq = is_eq
             if not all_oos_eq:
@@ -217,6 +244,13 @@ class Backtester:
 
         is_metrics  = _compute_metrics(all_is_eq  or [self._initial_cash], all_is_trades)
         oos_metrics = _compute_metrics(all_oos_eq or [self._initial_cash], all_oos_trades)
+
+        if is_benchmarks:
+            is_metrics.benchmark_return = float(np.mean(is_benchmarks))
+            is_metrics.alpha = is_metrics.total_return - is_metrics.benchmark_return
+        if oos_benchmarks:
+            oos_metrics.benchmark_return = float(np.mean(oos_benchmarks))
+            oos_metrics.alpha = oos_metrics.total_return - oos_metrics.benchmark_return
 
         return BacktestResult(
             in_sample=is_metrics,
