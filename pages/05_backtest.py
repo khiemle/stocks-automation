@@ -58,7 +58,7 @@ if run_btn and symbol:
                 r5, r6, r7, r8 = st.columns(4)
                 r5.metric("Sortino", f"{m.sortino_ratio:.2f}")
                 r6.metric("Profit Factor", f"{m.profit_factor:.2f}")
-                r7.metric("Trades", m.num_trades)
+                r7.metric("Trades", m.total_trades)
                 if m.alpha is not None:
                     r8.metric("Alpha vs Benchmark", f"{m.alpha:+.1%}")
 
