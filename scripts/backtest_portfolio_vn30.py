@@ -242,13 +242,9 @@ def run_portfolio(
                 if not can_add_to_sector(sym, list(positions.keys()), _MAX_SECTOR_POSITIONS):
                     continue
 
-                # Adaptive TP by regime: SIDEWAYS → 2×ATR, VOLATILE → 1.5×ATR, TRENDING → trail only
-                if entry_regime == "SIDEWAYS":
-                    tp = open_p + 2.0 * atr_v
-                elif entry_regime == "VOLATILE":
-                    tp = open_p + 1.5 * atr_v
-                else:
-                    tp = None
+                # Adaptive TP by regime: disabled — all regimes use trailing stop only
+                # Re-enable after tuning TP_SIDEWAYS_MULT (test 3×–4.5×ATR)
+                tp = None
 
                 cash -= cost
                 positions[sym] = Position(

@@ -313,14 +313,10 @@ class Backtester:
                         qty_f   = filled[-1].quantity
                         atr_val = float(atr_series.iloc[i]) if not np.isnan(atr_series.iloc[i]) else fp * 0.02
                         stop    = fp - risk.ATR_STOP_MULT * atr_val
-                        # Adaptive TP: SIDEWAYS → 2×ATR, VOLATILE → 1.5×ATR, TRENDING → None (trail)
+                        # Adaptive TP disabled — all regimes use trailing stop only
+                        # Re-enable after tuning TP_SIDEWAYS_MULT
                         _regime = getattr(self, "_pending_regime", "TRENDING")
-                        if _regime == "SIDEWAYS":
-                            _tp = fp + 2.0 * atr_val
-                        elif _regime == "VOLATILE":
-                            _tp = fp + 1.5 * atr_val
-                        else:
-                            _tp = None
+                        _tp = None
                         open_position = dict(entry_price=fp, qty=qty_f, stop=stop,
                                              take_profit=_tp, entry_regime=_regime,
                                              entry_atr=atr_val, trail_active=False,
