@@ -294,7 +294,7 @@ Dựa trên **impact dự kiến × độ dễ implement**, nhắm vào 2 vấn 
 
 | Ngày | Thay đổi | Commit | Ghi chú |
 |------|----------|--------|---------|
-| 2026-04-19 | **Portfolio baseline (swing trading lens)** | *(pending)* | Shared cash 500M, max_positions=5, CAGR +0.92%, WR 28.63%, MDD 17.21%. Bỏ B&H comparison. |
+| 2026-04-19 | **Portfolio baseline (swing trading lens)** | `012d39f` | Shared cash 500M, max_positions=5, CAGR +0.92%, WR 28.63%, MDD 17.21%. Bỏ B&H comparison. |
 | 2026-04-19 | Dịch doc sang tiếng Việt | `78447bc` | Giữ nguyên tên metric/constant |
 | 2026-04-19 | SSoT doc + baseline per-symbol (đã deprecate) | `87af473` | Per-symbol kết quả còn trong `data/backtest_vn30_2021-2026.csv` — chỉ dùng chẩn đoán |
 | 2026-04-19 | Thêm buy-hold benchmark + alpha vào metrics | `24b6cd2` | BacktestMetrics.benchmark_return, alpha |
