@@ -3,7 +3,9 @@
 > **Đây là tài liệu trung tâm về thuật toán đang áp dụng cho hệ thống.**
 > Mọi thay đổi về signal, risk, execution, hoặc backtest methodology PHẢI cập nhật file này cùng lúc với code theo [Commit Protocol](#5-commit-protocol) ở cuối file.
 >
-> **Cập nhật lần cuối**: 2026-04-19 · **Commit**: `d71eff7` · **Phiên bản baseline**: `MomentumV1 v1.0`
+> **Cập nhật lần cuối**: 2026-04-19 · **Phiên bản baseline**: `MomentumV1 v1.0`
+>
+> **Quan điểm đánh giá**: đây là **swing trading** trên tài khoản nhỏ (500M VND), cash chung, `max_positions=5`. Không so sánh với buy-and-hold dài hạn — B&H là chiến lược khác, sẽ được đánh giá khi phát triển signal engine riêng cho nó. Metric baseline dùng **portfolio-level**, không phải per-symbol.
 
 ---
 
@@ -106,58 +108,96 @@ File: `core/backtester.py`
   2. Pending BUY/SELL fill tại open(T+1) qua `SimulatedBroker.process_next_bar`
   3. Stop/TP kiểm tra trên high/low từ T+1 trở đi, nhưng chỉ khi đã qua T+2 từ entry
   4. Chặn re-entry trên bar bị stop-out (không BUY ngay sau forced exit)
-- **Benchmark**: buy-hold return per-symbol (mua ở close của warmup bar, bán tại close cuối cùng, tính đủ round-trip costs). VN-Index không có sẵn trên yfinance.
+- **Portfolio simulator** (`scripts/backtest_portfolio_vn30.py`): event loop trên union các ngày giao dịch của VN30, cash chung, `max_positions=5`. Khi > 5 BUY signal trong 1 phiên → rank theo score giảm dần và fill top-K slot còn trống. Đây là script dùng để đánh giá baseline theo **swing trading lens**.
+- **Per-symbol backtest** (`scripts/backtest_vn30.py`): chạy độc lập từng symbol với 500M; chỉ dùng để chẩn đoán per-symbol (symbol nào được thuật toán handle tốt/tệ), **không dùng làm baseline chính**.
 
 ---
 
 ## 2. Hiệu suất baseline
 
-**Cửa sổ**: 2021-04-19 → 2026-04-17 (5 năm, đi qua crash 2022 + hồi phục 2023-2025)
-**Universe**: VN30 (31 symbols — thừa 1 vs danh sách chuẩn 30)
-**Dữ liệu**: `data/backtest_vn30_2021-2026.csv`
-**Phiên bản algo**: `MomentumV1 v1.0` (EMA200 filter bật)
+**Setup**: 500M VND, `max_positions=5`, universe VN30 (31 symbols), shared cash pool — mô phỏng đúng swing trading thực tế (nhiều symbol cùng emit signal → rank theo score, chọn top-K fill slot trống).
 
-### 2.1 Aggregate Metrics
+**Cửa sổ chạy**: 2022-04-22 → 2026-04-17 (3.95 năm thực tế — 1 năm đầu bị warmup tiêu thụ để calibrate EMA200).
+
+**Dữ liệu**:
+- `data/backtest_portfolio_vn30_trades.csv` — 227 trades
+- `data/backtest_portfolio_vn30_equity.csv` — equity curve theo ngày
+- `data/backtest_portfolio_vn30_periodic.csv` — breakdown theo năm/quý
+
+**Phiên bản algo**: `MomentumV1 v1.0` (EMA200 filter bật, R:R 1:3, BUY_THRESHOLD 0.55).
+
+### 2.1 Aggregate Metrics (swing trading lens)
 
 | Metric | Giá trị | Mục tiêu | Status |
 |--------|--------:|---------:|:------:|
-| Median total return | +0.15% | > 75% (5yr ≈ 15%/năm) | ❌ |
-| Mean total return | +1.79% | > 75% | ❌ |
-| Median Sharpe | 0.025 | > 1.0 | ❌ |
-| Median MDD | 5.24% | < 15% | ✅ |
-| Median win rate | 33.33% | > 52% | ❌ |
-| Median profit factor | 0.98 | > 1.5 | ❌ |
-| Median alpha vs B&H | -33.00% | > 0 | ❌ |
-| Symbols có +alpha | 7 / 31 | > 15 / 31 | ❌ |
-| Tổng trades | 478 | ≥ 300 | ✅ |
+| Total return | +3.69% | > 50% / 4 năm | ❌ |
+| CAGR | +0.92% | > 10%/năm | ❌ |
+| Sharpe | 0.141 | > 1.0 | ❌ |
+| Sortino | 0.127 | > 1.5 | ❌ |
+| Max drawdown | 17.21% | < 15% | ❌ |
+| Win rate | 28.63% | > 40% | ❌ |
+| Profit factor | 1.038 | > 1.5 | ❌ |
+| Avg win | +7.53M VND | — | — |
+| Avg loss | -2.91M VND | — | — |
+| R:R thực tế (avg_win / |avg_loss|) | 2.59 | ≥ 3.0 | ❌ |
+| Tổng trades | 227 (57.5/năm) | ≥ 150 | ✅ |
+| Avg hold | 21.7 ngày (median 12) | 5-25 ngày (swing) | ✅ |
 
-### 2.2 Điểm sáng/tối per-symbol
+**Phân loại exit**:
+| Reason | Count | % |
+|--------|------:|--:|
+| STOP (hit) | 158 | 69.6% |
+| TP (hit) | 64 | 28.2% |
+| SELL (signal) | 2 | 0.9% |
+| EOD (close cuối kỳ) | 3 | 1.3% |
 
-**Alpha tốt nhất** (chiến lược tạo thêm giá trị):
-| Symbol | Strategy | B&H | Alpha |
-|--------|---------:|----:|------:|
-| PDR | +2.97% | -73.62% | **+76.59%** |
-| SAB | -10.37% | -35.52% | +25.15% |
-| BCM | +0.04% | -21.70% | +21.73% |
-| TPB | +2.34% | -10.27% | +12.60% |
-| SSI | +12.30% | +0.57% | +11.73% |
+**Tham chiếu**: lãi tiết kiệm VN ~5%/năm → CAGR 0.92% của chiến lược **thấp hơn lãi gửi ngân hàng**. Chiến lược hiện chưa có edge đủ để trả công sức + chi phí giao dịch.
 
-**Alpha tệ nhất** (chiến lược bỏ lỡ lợi nhuận):
-| Symbol | Strategy | B&H | Alpha |
-|--------|---------:|----:|------:|
-| VIC | +19.86% | +383.16% | **-363.30%** |
-| VHM | +12.61% | +269.25% | -256.64% |
-| HDB | -4.37% | +147.83% | -152.20% |
-| STB | +10.27% | +120.19% | -109.92% |
-| MBB | -0.90% | +92.80% | -93.71% |
+### 2.2 Phân rã theo năm
 
-### 2.3 Quan sát chính
+| Năm | Return | Trades | Win Rate | PnL (M VND) |
+|-----|-------:|-------:|---------:|------------:|
+| 2022 (Q2-Q4) | **-9.55%** | 15 | 6.67% | -44.3 |
+| 2023 | +3.27% | 30 | 23.33% | -2.5 |
+| 2024 | +1.78% | 65 | 30.77% | +18.4 |
+| 2025 | **+22.08%** | 87 | 36.78% | +104.1 |
+| 2026 (YTD) | -10.67% | 30 | 16.67% | -57.8 |
 
-1. **EMA200 filter hoạt động như hàng phòng ngự** — 5/7 symbols có alpha dương đều có B&H âm (PDR, SAB, BCM, TPB, PLX). Filter thành công trong việc tránh cổ phiếu downtrend.
-2. **Chiến lược không giữ được winner** — VIC tăng 383% nhưng chiến lược chỉ bắt được 19.86%. R:R 1:3 với TP cố định gây exit sớm trên uptrend mạnh.
-3. **Win rate 33% với R:R 1:3** cho EV hoà vốn nhưng không có biên an toàn — cần hoặc tăng +5-7pp win rate hoặc exit bất đối xứng.
-4. **Tần suất trade thấp** (~15 trades/symbol/5yr = 3/năm) — BUY_THRESHOLD 0.55 + EMA200 gate quá khắt khe. Trades tập trung vào vài symbols.
-5. **Đồng nhất giữa các symbols**: Sharpe gần 0, MDD đều < 15% — hệ low-activity, low-drawdown, low-return.
+Biến động lớn giữa các năm — **2025 kiếm được +22%, nhưng gần như giao toàn bộ cho 2026 Q1 (-12.84%)**. Chiến lược có momentum nhưng không tự bảo vệ khi regime đảo chiều.
+
+### 2.3 Phân rã theo quý
+
+| Quarter | Return | Trades | WinRate | PnL (M VND) |
+|---------|-------:|-------:|--------:|------------:|
+| 2022Q2 | -3.38% | 3 | 0.00% | -16.9 |
+| 2022Q3 | -1.85% | 8 | 12.50% | -9.0 |
+| 2022Q4 | -4.62% | 4 | 0.00% | -18.4 |
+| 2023Q1 | +5.36% | 4 | 25.00% | +3.0 |
+| 2023Q2 | +1.61% | 2 | 100.00% | +13.7 |
+| 2023Q3 | -1.43% | 14 | 21.43% | +2.7 |
+| 2023Q4 | -2.14% | 10 | 10.00% | -21.9 |
+| 2024Q1 | **+8.49%** | 15 | 66.67% | +45.3 |
+| 2024Q2 | -1.77% | 16 | 25.00% | -2.3 |
+| 2024Q3 | -1.20% | 14 | 21.43% | -9.9 |
+| 2024Q4 | -3.33% | 20 | 15.00% | -14.7 |
+| 2025Q1 | -1.94% | 23 | 30.43% | -2.8 |
+| 2025Q2 | **+12.52%** | 16 | 43.75% | +52.1 |
+| 2025Q3 | **+12.03%** | 22 | 54.55% | +64.0 |
+| 2025Q4 | -1.24% | 26 | 23.08% | -9.1 |
+| 2026Q1 | **-12.84%** | 25 | 12.00% | -71.4 |
+| 2026Q2 | +2.49% | 5 | 40.00% | +13.6 |
+
+**Pattern dễ thấy**: quý kiếm tiền = win rate ≥ 40%; quý lỗ = win rate ≤ 25%. Edge của thuật toán phụ thuộc hoàn toàn vào việc thị trường có "chiều lòng" momentum strategy hay không. 10/17 quý có return âm.
+
+### 2.4 Quan sát chính
+
+1. **70% trade bị stop-out** (158/227) — momentum signal kích hoạt quá nhiều false-positive. BUY_THRESHOLD 0.55 không đủ lọc, đặc biệt trong regime SIDEWAYS/choppy.
+2. **R:R thực tế 2.59 (vs thiết kế 3.0)** — TP hit ít, stop hit nhiều, slippage + commission ăn bớt reward. Muốn PF > 1.5 cần hoặc tăng win rate lên ~38% hoặc tăng avg_win thêm 40%.
+3. **Momentum chạy theo market regime** — 2025 (bull) +22%, 2026Q1 (reversal) -12.8%. Thiếu macro filter để tắt signal trong bear regime.
+4. **Win rate kém trong bear** — 2022 WR 6.67%, 2026Q1 WR 12% vs 2024Q1 WR 66.67%, 2025Q3 WR 54.55%. EMA200 filter không đủ — cần thêm filter ở tầng thị trường (VN30 basket EMA50) để nhận diện bear sớm.
+5. **Hold 21.7 ngày trung bình (median 12)** — đúng tính chất swing, không phải day-trade (< 3 ngày) cũng không phải position-trade (> 60 ngày). T+2 không phải rào cản.
+6. **Capacity chưa dùng hết** — portfolio chạy với max 5 slot nhưng 57.5 trades/năm ≈ ~11 trades/slot/năm, tức các slot thường trống. Có thể do BUY_THRESHOLD quá cao hoặc eligibility filter quá strict.
+7. **CAGR < lãi tiết kiệm** — 0.92%/năm không xứng với rủi ro MDD 17%. Chiến lược chưa có edge đủ để triển khai thật, cần cải tiến trọng tâm ở exit + macro filter trước khi chuyển Phase 2.
 
 ---
 
@@ -165,88 +205,88 @@ File: `core/backtester.py`
 
 Status: `[ ]` todo · `[~]` đang làm · `[x]` xong (kèm commit SHA + impact đo được)
 
+> **Tất cả success criteria đều đo ở portfolio level** (script `backtest_portfolio_vn30.py`), so sánh với baseline hiện tại: CAGR +0.92%, Sharpe 0.141, MDD 17.21%, WR 28.63%, PF 1.038.
+
 ### 3.1 Market-Level Filters
 
 - [ ] **VN30 macro regime filter** — tính basket VN30 equal-weight và EMA50; chặn BUY mới khi basket < basket EMA50
-  - **Rationale**: 70% tương quan giữa cổ phiếu VN30 và basket. Đi ngược macro = lỗ nặng trong bear market (2022).
-  - **Impact dự kiến**: giảm false BUY trong bear period; cải thiện MDD và win rate.
-  - **Success**: MDD ≤ 4%, win rate ≥ 38%
+  - **Rationale**: 70% tương quan giữa cổ phiếu VN30 và basket. Năm 2022 và 2026Q1 lỗ nặng do algo tiếp tục BUY trong bear. EMA200 per-symbol không đủ — cần filter ở tầng thị trường.
+  - **Impact dự kiến**: giảm trades trong bear period; cải thiện WR và MDD.
+  - **Success**: WR tổng ≥ 35% và WR trong bear quarter ≥ 25% (hiện 6-16%), MDD ≤ 12%
 - [ ] **Relative strength vs VN30 basket** — chỉ BUY khi return(20d) của symbol > return(20d) của basket
-  - **Rationale**: Swing momentum cần leadership so với thị trường. Run như VIC/VHM đến từ stock dẫn dắt basket.
-  - **Impact dự kiến**: tập trung vào leader, tránh laggard.
-  - **Success**: median alpha > -15% (vs hiện tại -33%)
+  - **Rationale**: Swing momentum cần leadership so với thị trường; BUY leader thay vì laggard giảm stop-out rate.
+  - **Success**: STOP/TP ratio giảm từ 2.47 (158/64) xuống ≤ 1.5
 
 ### 3.2 Entry Refinement
 
 - [ ] **Xác nhận volume breakout** — yêu cầu `vol > 150% × vol_MA20` trên signal bar
-  - **Rationale**: weight 0.10 hiện tại cho phép BUY trên volume yếu. Momentum không có volume = chop.
-  - **Success**: win rate ≥ 40%
+  - **Rationale**: weight volume 0.10 hiện tại cho phép BUY trên volume yếu. Momentum không có volume = chop → stop-out.
+  - **Success**: WR ≥ 35% (hiện 28.63%), số trades giảm không quá 30%
 - [ ] **Yêu cầu MACD zero-line** — thêm hard gate: MACD line phải > 0 mới BUY (không chỉ > signal)
   - **Rationale**: gate hiện tại cho phép BUY khi cả MACD & signal đều âm (vẫn downtrend).
-  - **Success**: win rate ≥ 36%
+  - **Success**: WR tổng ≥ 33%, quý lỗ giảm từ 10/17 xuống ≤ 7/17
 - [ ] **Tránh BUY cuối phiên** (chỉ live scan) — scan lúc 15:35, nhưng tag signal > 14:45 là "late" và yêu cầu score > 0.65 thay vì 0.55
   - **Rationale**: Late-session rally hay gap down sáng hôm sau.
-  - **Success**: Avg gap loss giảm
-- [ ] **Bỏ EMA200 cho small-cap** — filter quá strict cho recovery play; skip filter khi symbol ở recovery regime (price > 52w low × 1.3)
+  - **Success**: Avg gap-down loss giảm (đo qua log live scan Phase 1 sau 30 trades)
 
 ### 3.3 Exit Refinement (impact lớn nhất)
 
 - [ ] **Trailing stop sau +1R** — khi unrealized gain > 1R (= 1.5×ATR), trail stop tại `high - 2×ATR`; bỏ TP cố định
-  - **Rationale**: case VIC — algo exit tại +4.5R, bỏ lỡ 40R sau đó. Trailing cho phép winner chạy.
-  - **Impact dự kiến**: Rất lớn (đòn bẩy lớn nhất trong backtest).
-  - **Success**: Profit factor ≥ 1.5, avg win ≥ 2× hiện tại
+  - **Rationale**: TP hit chỉ 28% (64/227), nhiều winner bị chốt sớm. Trailing cho phép winner chạy trong trend mạnh.
+  - **Impact dự kiến**: Lớn nhất — avg_win có thể tăng ≥ 50%.
+  - **Success**: Profit factor ≥ 1.3, CAGR ≥ 5%/năm
 - [ ] **TP thích nghi theo regime** — TRENDING: giữ ATR×4.5 hoặc trailing; SIDEWAYS: giảm còn ATR×2; VOLATILE: giảm còn ATR×1.5
-  - **Rationale**: Sideways cho lại profit nhanh — chốt sớm.
-  - **Success**: win rate trong SIDEWAYS ≥ 45%
+  - **Rationale**: Sideways cho lại profit nhanh — chốt sớm. Nhiều quý (2023Q3, 2024Q2-Q4) lỗ do thị trường sideways.
+  - **Success**: WR trong SIDEWAYS ≥ 35%, PF trong SIDEWAYS > 1.0
 - [ ] **Breakeven stop sau +1R** — kéo stop về entry khi đạt +1R (bảo vệ chống lỗ)
-  - **Rationale**: thay đổi nhỏ, ngăn winning-to-loss.
-  - **Success**: Avg loss giảm 20%
+  - **Rationale**: thay đổi nhỏ, ngăn winning-to-loss flip. 158 stop-out hiện tại có thể giảm đáng kể.
+  - **Success**: Avg loss giảm 20% (từ -2.91M xuống ≤ -2.33M)
 
 ### 3.4 Position Sizing
 
 - [ ] **Kelly fraction từ 30-trade rolling** — sau 30 trades, dùng `half-Kelly = 0.5 × (W - (1-W)/R)` giới hạn ở 2%
-  - **Rationale**: 2% cố định hiện tại không thích nghi với edge quan sát được.
-  - **Success**: CAGR +2% mà MDD không tăng > +2%
+  - **Rationale**: 2% cố định hiện tại không thích nghi với edge quan sát được (đặc biệt trong bear period nên giảm size).
+  - **Success**: CAGR ≥ +3%/năm mà MDD không tăng > 2pp
 - [ ] **Risk điều chỉnh theo volatility** — regime VOLATILE: giảm `RISK_PCT` xuống 1% (từ 2%)
   - **Rationale**: Volatile = stop dễ bị hit; giảm size bảo vệ vốn.
-  - **Success**: MDD trong period VOLATILE giảm ≥ 3pp
+  - **Success**: MDD ≤ 12%
 
 ### 3.5 Portfolio-Level
 
 - [ ] **Giới hạn concentration theo sector** — tối đa 2 vị thế mở cùng sector (ngân hàng, BĐS, thép, bán lẻ)
-  - **Rationale**: VN30 có 6-7 ngân hàng + 4-5 BĐS. Tương quan nội ngành cao.
-  - **Success**: Sharpe điều chỉnh correlation ≥ 0.5
+  - **Rationale**: VN30 có 6-7 ngân hàng + 4-5 BĐS. Tương quan nội ngành cao → nhiều lúc 5 slot cùng chịu rủi ro tương tự.
+  - **Success**: MDD ≤ 12%, daily return std giảm ≥ 15%
 - [ ] **Lọc vị thế theo correlation** — từ chối BUY mới nếu `corr(20d, existing_positions) > 0.7`
   - **Rationale**: Phiên bản thống kê của sector filter.
-  - **Success**: equity curve mượt hơn
+  - **Success**: equity curve mượt hơn (max consecutive down-days giảm ≥ 20%)
 
 ### 3.6 Signal Engine Extensions (Phase 2+)
 
 - [ ] **Foreign flow từ SSI** — khi Phase 2 có SSI integration, tăng foreign-flow weight từ 0.05 → 0.15
   - **Rationale**: Foreign flow là leading indicator mạnh ở VN; 0.05 quá thấp.
-  - **Success**: win rate ≥ 45%
+  - **Success**: WR ≥ 38%
 - [ ] **Intraday volume profile** — giữa phiên (≥ 10:30) check cumulative vol > 50% projected daily vol trước khi vào lệnh
   - **Rationale**: Xác nhận momentum sớm hơn trong phiên.
 
 ### 3.7 Validation Mô Hình
 
 - [ ] **Stress test crash 2022** — backtest riêng cửa sổ Q2-Q3 2022
-  - **Success**: MDD trong period đó < 10% (vs ~15% buy-hold)
+  - **Success**: MDD trong period đó < 10%, quarterly return ≥ -2%
 - [ ] **Parameter sensitivity grid** — sweep BUY_THRESHOLD ∈ {0.45, 0.50, 0.55, 0.60, 0.65} × ATR_TP_MULT ∈ {2, 3, 4.5, 6, trailing}
   - **Success**: xác định flat plateau (robust) vs sharp peak (overfit)
-- [ ] **Walk-forward re-validation** — sau khi implement Top-3 cải tiến, chạy lại `run_all(walk_forward=True)`
+- [ ] **Walk-forward re-validation** — sau khi implement Top-3 cải tiến, chạy lại portfolio backtest với IS/OOS split
   - **Success**: IS/OOS Sharpe lệch < 0.3
 
 ### 3.8 Thứ tự ưu tiên (đề xuất)
 
-Dựa trên **impact dự kiến × độ dễ implement**:
+Dựa trên **impact dự kiến × độ dễ implement**, nhắm vào 2 vấn đề lớn nhất của baseline: **WR thấp (28.63%)** và **bear-period bleed (2022, 2026Q1)**:
 
-1. 🔥 **Trailing stop** (3.3) — đòn bẩy lớn nhất; case VIC/VHM cho thấy cơ hội gấp 10x
-2. 🔥 **Relative strength vs VN30 basket** (3.1) — dồn vốn vào leader
-3. 🔥 **TP thích nghi theo regime** (3.3) — dễ implement, rationale rõ
-4. **VN30 macro filter** (3.1) — cải thiện phòng ngự
-5. **Xác nhận volume breakout** (3.2) — lọc chất lượng
-6. **Giới hạn concentration sector** (3.5) — giảm correlation ẩn
+1. 🔥 **VN30 macro filter** (3.1) — fix vấn đề lớn nhất: bear-period bleed. Đơn giản, tác động trực tiếp đến WR + MDD.
+2. 🔥 **Trailing stop sau +1R** (3.3) — cải thiện avg_win và PF; 70% trade bị stop nghĩa là nhiều winner không kịp biến thành big winner.
+3. 🔥 **Xác nhận volume breakout** (3.2) — lọc nhanh nhất để tăng WR từ 28% → 35%+.
+4. **TP thích nghi theo regime** (3.3) — giảm lỗ trong SIDEWAYS (chiếm phần lớn các quý âm).
+5. **Relative strength vs VN30 basket** (3.1) — focus vào leader.
+6. **Giới hạn concentration sector** (3.5) — giảm correlation ẩn, smoother equity.
 
 ---
 
@@ -254,7 +294,9 @@ Dựa trên **impact dự kiến × độ dễ implement**:
 
 | Ngày | Thay đổi | Commit | Ghi chú |
 |------|----------|--------|---------|
-| 2026-04-19 | **SSoT doc + baseline VN30 5 năm** | `d71eff7` | 31 symbols, median alpha -33% |
+| 2026-04-19 | **Portfolio baseline (swing trading lens)** | *(pending)* | Shared cash 500M, max_positions=5, CAGR +0.92%, WR 28.63%, MDD 17.21%. Bỏ B&H comparison. |
+| 2026-04-19 | Dịch doc sang tiếng Việt | `78447bc` | Giữ nguyên tên metric/constant |
+| 2026-04-19 | SSoT doc + baseline per-symbol (đã deprecate) | `87af473` | Per-symbol kết quả còn trong `data/backtest_vn30_2021-2026.csv` — chỉ dùng chẩn đoán |
 | 2026-04-19 | Thêm buy-hold benchmark + alpha vào metrics | `24b6cd2` | BacktestMetrics.benchmark_return, alpha |
 | 2026-04-19 | Fix 4 lỗi consistency | `705d3dc` | Single source of truth cho commission/slippage |
 | 2026-04-19 | Live scan load 300 bars | `228b62d` | EMA200 filter active trong scan (trước đây NaN) |
