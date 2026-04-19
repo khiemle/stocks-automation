@@ -98,12 +98,14 @@ class DataManager:
     # ------------------------------------------------------------------
 
     def update_daily(self) -> dict[str, bool]:
-        today = date.today().isoformat()
+        from core.trading_calendar import last_trading_date
+        target = last_trading_date()
+        target_str = target.isoformat()
         symbols_hose = self._src.get_universe("HOSE")
         symbols_hnx = self._src.get_universe("HNX")
         all_symbols = [(s, "HOSE") for s in symbols_hose] + [(s, "HNX") for s in symbols_hnx]
 
-        logger.info("update_daily: %d symbols for %s", len(all_symbols), today)
+        logger.info("update_daily: %d symbols for %s", len(all_symbols), target_str)
 
         status: dict[str, bool] = {}
         batches = [all_symbols[i: i + _BATCH_SIZE] for i in range(0, len(all_symbols), _BATCH_SIZE)]
@@ -111,26 +113,40 @@ class DataManager:
         for idx, batch in enumerate(batches, 1):
             syms = [s for s, _ in batch]
             exchange_map = {s: e for s, e in batch}
+
+            # Skip symbols already up-to-date
+            syms_to_fetch = []
+            for symbol in syms:
+                path = self._parquet_path(symbol)
+                if path.exists():
+                    df_existing = pd.read_parquet(path)
+                    if not df_existing.empty and df_existing.index.max().date() >= target:
+                        status[symbol] = True
+                        continue
+                syms_to_fetch.append(symbol)
+
+            if not syms_to_fetch:
+                continue
+
             try:
-                new_data = self._src.get_daily_ohlcv_batch(syms, today, today)
+                new_data = self._src.get_daily_ohlcv_batch(syms_to_fetch, target_str, target_str)
             except Exception as exc:
                 logger.error("Batch %d fetch failed: %s", idx, exc)
-                for s in syms:
+                for s in syms_to_fetch:
                     status[s] = False
                 continue
 
-            for symbol in syms:
+            for symbol in syms_to_fetch:
                 df_new = new_data.get(symbol)
                 if df_new is None or df_new.empty:
-                    logger.warning("No data today for %s", symbol)
+                    logger.warning("No data for %s on %s (non-trading day or delisted)", symbol, target_str)
                     status[symbol] = False
                     continue
                 try:
                     path = self._parquet_path(symbol)
                     if path.exists():
                         df_old = pd.read_parquet(path)
-                        # Drop any existing rows for today to avoid duplicates
-                        df_old = df_old[df_old.index < pd.Timestamp(today)]
+                        df_old = df_old[df_old.index < pd.Timestamp(target_str)]
                         df = pd.concat([df_old, df_new]).sort_index()
                     else:
                         df = df_new
