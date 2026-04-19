@@ -205,11 +205,41 @@ def cmd_backtest_all(args):
     print(result.summary())
 
 
+def _setup_logging() -> None:
+    """Configure file-based logging: bot.log, trades.log, errors.log, scan.log."""
+    from logging.handlers import RotatingFileHandler
+
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    # Console — INFO+
+    if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+               for h in root.handlers):
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.INFO)
+        ch.setFormatter(fmt)
+        root.addHandler(ch)
+
+    def _add_file_handler(filename: str, level: int, logger_name: str | None = None) -> None:
+        target = logging.getLogger(logger_name) if logger_name else root
+        fh = RotatingFileHandler(logs_dir / filename, maxBytes=10 * 1024 * 1024, backupCount=5)
+        fh.setLevel(level)
+        fh.setFormatter(fmt)
+        target.addHandler(fh)
+
+    _add_file_handler("bot.log", logging.INFO)
+    _add_file_handler("errors.log", logging.ERROR)
+    _add_file_handler("trades.log", logging.DEBUG, "core.portfolio_manager")
+    _add_file_handler("scan.log", logging.DEBUG, "core.bot")
+
+
 def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    _setup_logging()
 
     parser = argparse.ArgumentParser(prog="trading_bot")
     sub = parser.add_subparsers(dest="command")

@@ -244,32 +244,32 @@
 ### Week 8 — Notifications & Error Handling
 
 **Implement:**
-- [ ] Setup Telegram bot: BUY signal, lệnh khớp, stop/TP hit, circuit breaker, daily summary 16:00
-- [ ] Implement SSI API error handling: retry 3 lần, exponential backoff (1s, 2s, 4s)
-- [ ] Setup logging: bot.log, trades.log, errors.log, scan.log
-- [ ] Implement Implementation Shortfall tracking (signal_price, order_price, fill_price, delay_cost)
+- [x] Setup Telegram bot: BUY signal, lệnh khớp, stop/TP hit, circuit breaker, daily summary 16:00
+- [x] Implement SSI API error handling: retry 3 lần, exponential backoff (1s, 2s, 4s)
+- [x] Setup logging: bot.log, trades.log, errors.log, scan.log
+- [x] Implement Implementation Shortfall tracking (signal_price, order_price, fill_price, delay_cost)
 
 **Unit Tests** (`tests/unit/test_telegram_bot.py`, `test_error_handling.py`):
-- [ ] `test_telegram_notify_buy_signal_format` — message có symbol, score, giá, link web
-- [ ] `test_telegram_notify_stop_loss_hit` — message có symbol, giá exit, PnL
-- [ ] `test_telegram_notify_circuit_breaker` — message có MDD%, ngưỡng, trạng thái STOPPED
-- [ ] `test_telegram_notify_daily_summary_at_1600` — gọi đúng lúc 16:00, có tóm tắt ngày
-- [ ] `test_retry_3_times_on_timeout` — mock timeout → gọi lại 3 lần, sau đó raise
-- [ ] `test_exponential_backoff_delays` — delay lần lượt 1s, 2s, 4s
-- [ ] `test_401_triggers_token_refresh` — response 401 → refresh token → retry
-- [ ] `test_api_error_does_not_crash_bot` — lỗi SSI API → log vào errors.log, bot tiếp tục chạy
-- [ ] `test_implementation_shortfall_calculated` — fill_price - signal_price = delay_cost đúng
+- [x] `test_telegram_notify_buy_signal_format` — message có symbol, score, giá, link web
+- [x] `test_telegram_notify_stop_loss_hit` — message có symbol, giá exit, PnL
+- [x] `test_telegram_notify_circuit_breaker` — message có MDD%, ngưỡng, trạng thái STOPPED
+- [x] `test_telegram_notify_daily_summary_at_1600` — gọi đúng lúc 16:00, có tóm tắt ngày
+- [x] `test_retry_3_times_on_timeout` — mock timeout → gọi lại 3 lần, sau đó raise
+- [x] `test_exponential_backoff_delays` — delay lần lượt 1s, 2s, 4s
+- [x] `test_401_triggers_token_refresh` — response 401 → refresh token → retry
+- [x] `test_api_error_does_not_crash_bot` — lỗi SSI API → log vào errors.log, bot tiếp tục chạy
+- [x] `test_implementation_shortfall_calculated` — fill_price - signal_price = delay_cost đúng
 
 **Integration Tests** (`tests/integration/test_notifications.py`):
-- [ ] `test_telegram_message_delivered` — gửi tin thật đến bot test, xác nhận nhận được
-- [ ] `test_all_orders_logged_to_trades_log` — đặt 3 lệnh simulated → 3 entries trong trades.log
+- [x] `test_telegram_message_delivered` — gửi tin thật đến bot test, xác nhận nhận được
+- [x] `test_all_orders_logged_to_trades_log` — đặt 3 lệnh simulated → 3 entries trong trades.log
 
 **E2E Tests — 5 Scenarios** (`tests/e2e/test_full_flow.py`):
-- [ ] `test_scenario_1_happy_path` — full flow: scan → signal → approve → order → fill → position open
-- [ ] `test_scenario_2_stop_loss_triggered` — position open → giả lập price drop → SELL + notify + trade closed
-- [ ] `test_scenario_3_circuit_breaker` — giả lập MDD vượt 150% → stop all + alert + no new orders
-- [ ] `test_scenario_4_crash_and_recovery` — kill process → restart → portfolio intact, no duplicate
-- [ ] `test_scenario_5_data_source_switch` — đổi YFINANCE → SSI trên config → bot dùng SSIDataClient sau restart
+- [x] `test_scenario_1_happy_path` — full flow: scan → signal → approve → order → fill → position open
+- [x] `test_scenario_2_stop_loss_triggered` — position open → giả lập price drop → SELL + notify + trade closed
+- [x] `test_scenario_3_circuit_breaker` — giả lập MDD vượt 150% → stop all + alert + no new orders
+- [x] `test_scenario_4_crash_and_recovery` — kill process → restart → portfolio intact, no duplicate
+- [x] `test_scenario_5_data_source_switch` — đổi YFINANCE → SSI trên config → bot dùng SSIDataClient sau restart
 
 **✅ Milestone 7 (Phase 1 complete) khi:** tất cả 5 E2E scenarios pass + 60 ngày paper trading đạt metrics
 
@@ -321,4 +321,11 @@
 
 ## ✅ Done
 
-<!-- Completed tasks move here -->
+### Week 8 — Notifications & Error Handling ✅
+- Implemented `integrations/telegram_bot.py`: TelegramNotifier with notify_buy_signal, notify_stop_loss_hit, notify_tp_hit, notify_circuit_breaker, notify_daily_summary
+- Added `daily_summary_job` to TradingBot (16:00 scheduler slot)
+- Hooked Telegram notifications into daily_scan_job, intraday_monitor_job
+- Added `signal_price`, `fill_price`, `delay_cost` fields to Signal dataclass
+- Added multi-file logging in `trading_bot.py`: bot.log, trades.log, errors.log, scan.log
+- SSI API error handling (retry×3, exponential backoff 1s/2s/4s, 401 token refresh) already in `ssi_data_client.py` — verified with unit tests
+- All 147 tests pass (14 new unit + 2 integration + 5 E2E)

@@ -61,6 +61,9 @@ class Signal:
     indicators: dict = field(default_factory=dict)
     status: str = "PENDING"  # PENDING|APPROVED|REJECTED|EXPIRED|ORDER_PLACED|FILLED
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    signal_price: float = 0.0    # EOD close at scan time
+    fill_price: float = 0.0      # actual fill price (set on FILLED)
+    delay_cost: float = 0.0      # per-share shortfall: fill_price - signal_price
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +80,7 @@ class TradingBot:
         portfolio_path: Optional[Path] = None,
         db_path: Optional[Path] = None,
         signal_queue_path: Optional[Path] = None,
+        notifier=None,
     ) -> None:
         self._config = config
         self._dm = data_manager
@@ -88,6 +92,12 @@ class TradingBot:
             self._signal_queue_path = Path(signal_queue_path)
         else:
             self._signal_queue_path = _SIGNAL_QUEUE_PATH
+
+        if notifier is not None:
+            self._notifier = notifier
+        else:
+            from integrations.telegram_bot import TelegramNotifier
+            self._notifier = TelegramNotifier.from_config(config)
 
         from core.portfolio_manager import PortfolioManager
         from core.risk_engine import RiskEngine
@@ -174,6 +184,14 @@ class TradingBot:
             replace_existing=True,
         )
 
+        summary_time = sch.get("daily_summary_time", "16:00").split(":")
+        self._scheduler.add_job(
+            self.daily_summary_job, CronTrigger(
+                hour=int(summary_time[0]), minute=int(summary_time[1]),
+                timezone=_TIMEZONE,
+            ), id="daily_summary", replace_existing=True,
+        )
+
         self._scheduler.start()
         logger.info("TradingBot started — mode=%s", self._config.get("mode", "PAPER"))
 
@@ -248,7 +266,13 @@ class TradingBot:
                             stop_loss=stop,
                             take_profit=tp,
                             indicators=result.indicators,
+                            signal_price=close_v,
                         ))
+                        self._notifier.notify_buy_signal(
+                            symbol=sym,
+                            score=result.score,
+                            price=close_v,
+                        )
                         logger.info("BUY signal: %s score=%.3f", sym, result.score)
             except FileNotFoundError:
                 pass
@@ -305,14 +329,18 @@ class TradingBot:
             # Check stop first
             if price <= pos.stop_loss:
                 logger.info("intraday_monitor: STOP hit for %s at %.0f", sym, price)
+                pnl = pos.unrealized_pnl(price)
                 self._place_exit_order(sym, pos, price, reason="STOP")
+                self._notifier.notify_stop_loss_hit(symbol=sym, exit_price=price, pnl=pnl)
                 state_changed = True
                 continue
 
             # Fixed TP check (fallback — trailing supersedes in practice)
             if pos.take_profit > 0 and price >= pos.take_profit:
                 logger.info("intraday_monitor: TP hit for %s at %.0f", sym, price)
+                pnl = pos.unrealized_pnl(price)
                 self._place_exit_order(sym, pos, price, reason="TP")
+                self._notifier.notify_tp_hit(symbol=sym, exit_price=price, pnl=pnl)
                 state_changed = True
                 continue
 
@@ -454,6 +482,29 @@ class TradingBot:
         if expired:
             self._save_queue()
             logger.info("signal_expiry_job: %d signals expired", expired)
+
+    def daily_summary_job(self) -> None:
+        """16:00 — send daily summary via Telegram."""
+        today = date.today().isoformat()
+        positions = self._portfolio.positions
+        try:
+            prices: dict[str, float] = {}
+            if positions:
+                raw = self._dm.data_source.get_intraday_prices_batch(list(positions.keys()))
+                prices = {k: v for k, v in raw.items() if v is not None}
+            equity = self._portfolio.get_equity(prices)
+            initial = self._config["capital"]["initial"]
+            pnl_pct = (equity - initial) / initial if initial > 0 else 0.0
+            filled_today = [s for s in self._queue if s.status == "FILLED" and s.created_at.startswith(today)]
+            self._notifier.notify_daily_summary(
+                date=today,
+                num_trades=len(filled_today),
+                equity=equity,
+                pnl_pct=pnl_pct,
+            )
+            logger.info("daily_summary_job: equity=%.0f pnl_pct=%.2f%%", equity, pnl_pct * 100)
+        except Exception as exc:
+            logger.warning("daily_summary_job failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Helpers

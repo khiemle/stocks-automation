@@ -59,7 +59,7 @@ def test_scheduler_starts_and_stops(tmp_path):
 
 
 def test_scheduler_registers_all_jobs(tmp_path):
-    """start() → 7 jobs registered (daily, order, cancel, equity, weekly, expiry, intraday)."""
+    """start() → 8 jobs registered (daily, order, cancel, equity, weekly, expiry, intraday, summary)."""
     bot = _make_bot(tmp_path)
     bot.start()
     try:
@@ -67,7 +67,7 @@ def test_scheduler_registers_all_jobs(tmp_path):
         expected = {
             "daily_scan", "order_placement", "cancel_unfilled",
             "equity_snapshot", "weekly_reset", "signal_expiry",
-            "intraday_monitor",
+            "intraday_monitor", "daily_summary",
         }
         assert expected == job_ids
     finally:
