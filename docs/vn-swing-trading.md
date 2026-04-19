@@ -303,7 +303,7 @@ Vòng tiếp theo nhắm vào **vấn đề mới: PF thấp + win rate dưới 
 
 | Ngày | Thay đổi | Commit | Ghi chú |
 |------|----------|--------|---------|
-| 2026-04-19 | **Re-baseline VN30 portfolio** sau Top-3 improvements | *(pending)* | CAGR +0.92% → +1.74%, Sharpe 0.141 → 0.261, MDD 17.21% → 8.62%, WR 28.63% → 36.74%, PF 1.038 → 1.106 |
+| 2026-04-19 | **Re-baseline VN30 portfolio** sau Top-3 improvements | `752abbf` | CAGR +0.92% → +1.74%, Sharpe 0.141 → 0.261, MDD 17.21% → 8.62%, WR 28.63% → 36.74%, PF 1.038 → 1.106 |
 | 2026-04-19 | Trailing stop sau +1R (roadmap 3.3) | `e23a2f0` | Bỏ TP cố định; `ATR_TRAIL_TRIGGER=1.5`, `ATR_TRAIL_MULT=2.0`; stop ratchet only up |
 | 2026-04-19 | VN30 macro regime filter (roadmap 3.1) | `8c7d3c7` | Basket VN30 equal-weight + EMA50; `core/market_regime.py`. Chặn BUY khi basket ≤ EMA50 |
 | 2026-04-19 | Volume breakout hard gate (roadmap 3.2) | `41d51d6` | `vol >= 1.5 × vol_MA20` mới BUY |
