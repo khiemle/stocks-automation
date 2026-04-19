@@ -1,6 +1,7 @@
 # Credentials — không bao giờ commit
 .env
 config/.env
+config/config.json
 *.key
 
 # Data files — quá lớn cho git

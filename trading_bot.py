@@ -52,6 +52,19 @@ def cmd_start(args):
     bot.start()
 
 
+def cmd_scan_signals(args):
+    """Run daily_scan_job immediately: scan → write signal_queue → Telegram notify."""
+    config = load_config()
+    bot = build_bot(config)
+    print("Running daily scan (reads local Parquet data)...")
+    bot.daily_scan_job()
+    queue = bot.queue
+    buys = [s for s in queue if s.action == "BUY" and s.status == "PENDING"]
+    print(f"\nDone. {len(buys)} BUY signal(s) written to state/signal_queue.json")
+    for sig in sorted(buys, key=lambda s: -s.score):
+        print(f"  {sig.symbol:6s}  score={sig.score:+.3f}  stop={sig.stop_loss:,.0f}  tp={sig.take_profit:,.0f}")
+
+
 def cmd_init_data(args):
     config = load_config()
     from data_sources.yfinance_client import YFinanceClient
@@ -253,6 +266,7 @@ def main():
     p_scan.add_argument("--symbol", default=None, help="single symbol (omit = scan all universe)")
 
     sub.add_parser("update-daily")
+    sub.add_parser("scan-signals")
 
     p_val = sub.add_parser("validate")
     p_val.add_argument("--symbol", default=None, help="single symbol (omit = all)")
@@ -269,7 +283,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "scan":
+    if args.command == "scan-signals":
+        cmd_scan_signals(args)
+    elif args.command == "scan":
         cmd_scan(args)
     elif args.command == "update-daily":
         cmd_update_daily(args)
