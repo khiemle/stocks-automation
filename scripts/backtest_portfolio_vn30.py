@@ -31,8 +31,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from brokers.simulated_broker import _COMMISSION_RATE, _SLIPPAGE_RATE  # noqa: E402
 from core.market_regime import MarketRegime  # noqa: E402
 from core.risk_engine import RiskEngine  # noqa: E402
+from core.sector_map import can_add_to_sector  # noqa: E402
 from signals.momentum_v1 import MomentumV1  # noqa: E402
 from ta.volatility import AverageTrueRange  # noqa: E402
+
+_MAX_SECTOR_POSITIONS = 2  # max open positions per sector at any time
 
 _WARMUP = 252
 _PERIODS_PER_YEAR = 252
@@ -234,6 +237,10 @@ def run_portfolio(
                         continue
                     qty = max_qty
                     cost = qty * open_p * (1 + _COMMISSION_RATE + _SLIPPAGE_RATE)
+
+                # Sector concentration check: max 2 positions per sector
+                if not can_add_to_sector(sym, list(positions.keys()), _MAX_SECTOR_POSITIONS):
+                    continue
 
                 # Adaptive TP by regime: SIDEWAYS → 2×ATR, VOLATILE → 1.5×ATR, TRENDING → trail only
                 if entry_regime == "SIDEWAYS":
