@@ -58,7 +58,12 @@ def test_context_returns_dict(_stub_symbols):
     symbols, idx = _stub_symbols
     regime = MarketRegime(symbols=["UP"])
     ctx = regime.context(idx[-1])
-    assert ctx == {"macro_above_ema50": True}
+    assert "macro_above_ema50" in ctx
+    assert ctx["macro_above_ema50"] is True
+    # basket_return_20d present when ≥21 bars available
+    if len(idx) >= 21:
+        assert "basket_return_20d" in ctx
+        assert isinstance(ctx["basket_return_20d"], float)
 
 
 def test_date_before_index_returns_true(_stub_symbols):

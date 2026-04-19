@@ -51,6 +51,8 @@ class Position:
     entry_date: pd.Timestamp
     entry_idx: int           # global date index
     trail_active: bool = False  # becomes True once high reaches entry + 1R
+    take_profit: float | None = None  # fixed TP for SIDEWAYS/VOLATILE regimes; None = trail only
+    entry_regime: str = "TRENDING"
 
 
 @dataclass
@@ -139,7 +141,7 @@ def run_portfolio(
     trades: list[TradeLog] = []
     equity_curve: list[tuple[pd.Timestamp, float]] = []
     # pending queues (set yesterday, executed at today's open)
-    pending_buys: list[tuple[str, float]] = []  # [(symbol, score)]
+    pending_buys: list[tuple[str, float, str]] = []  # [(symbol, score, regime)]
     pending_sells: set[str] = set()
 
     engine = MomentumV1()
@@ -197,7 +199,7 @@ def run_portfolio(
         slots = max_positions - len(positions)
         if slots > 0 and pending_buys:
             pending_buys.sort(key=lambda x: -x[1])
-            for sym, score in pending_buys:
+            for sym, score, entry_regime in pending_buys:
                 if slots <= 0:
                     break
                 if sym in positions:
@@ -233,6 +235,14 @@ def run_portfolio(
                     qty = max_qty
                     cost = qty * open_p * (1 + _COMMISSION_RATE + _SLIPPAGE_RATE)
 
+                # Adaptive TP by regime: SIDEWAYS → 2×ATR, VOLATILE → 1.5×ATR, TRENDING → trail only
+                if entry_regime == "SIDEWAYS":
+                    tp = open_p + 2.0 * atr_v
+                elif entry_regime == "VOLATILE":
+                    tp = open_p + 1.5 * atr_v
+                else:
+                    tp = None
+
                 cash -= cost
                 positions[sym] = Position(
                     symbol=sym,
@@ -242,6 +252,8 @@ def run_portfolio(
                     entry_atr=atr_v,
                     entry_date=date,
                     entry_idx=idx,
+                    take_profit=tp,
+                    entry_regime=entry_regime,
                 )
                 slots -= 1
         pending_buys = []
@@ -262,13 +274,16 @@ def run_portfolio(
             bar = df.loc[date]
             lo = float(bar["low"])
             hi = float(bar["high"])
-            # Stop check always fires first (conservative when both low ≤ stop
-            # and high ≥ trigger on same bar)
+            # Stop check fires first (conservative when stop and TP both hit on same bar)
             if lo <= pos.stop:
                 reason = "TRAIL" if pos.trail_active else "STOP"
                 to_close.append((sym, pos.stop, reason))
                 continue
-            # Trail activation: high crossed entry + 1R
+            # Adaptive TP check: SIDEWAYS/VOLATILE have a fixed take-profit target
+            if pos.take_profit is not None and hi >= pos.take_profit:
+                to_close.append((sym, pos.take_profit, "TP"))
+                continue
+            # Trail activation: high crossed entry + 1R (TRENDING regime uses trailing only)
             trigger = pos.entry_price + risk.ATR_TRAIL_TRIGGER * pos.entry_atr
             if not pos.trail_active and hi >= trigger:
                 pos.trail_active = True
@@ -334,7 +349,7 @@ def run_portfolio(
             except Exception:
                 continue
             if res.action == "BUY":
-                pending_buys.append((sym, res.score))
+                pending_buys.append((sym, res.score, res.regime))
 
         # ─────────────────────────────────────────────────────
         # E) Mark-to-market equity

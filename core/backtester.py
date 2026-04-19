@@ -292,6 +292,7 @@ class Backtester:
 
         open_position: Optional[dict] = None   # {entry_price, qty, stop, tp, entry_date, entry_bar}
         pending_signal: Optional[str] = None   # "BUY" | "SELL"
+        self._pending_regime: str = "TRENDING"  # regime at signal time, used when filling BUY
 
         for i in range(1, len(df)):
             # Skip warmup period — indicators (esp. EMA200) need prior history
@@ -312,9 +313,19 @@ class Backtester:
                         qty_f   = filled[-1].quantity
                         atr_val = float(atr_series.iloc[i]) if not np.isnan(atr_series.iloc[i]) else fp * 0.02
                         stop    = fp - risk.ATR_STOP_MULT * atr_val
+                        # Adaptive TP: SIDEWAYS → 2×ATR, VOLATILE → 1.5×ATR, TRENDING → None (trail)
+                        _regime = getattr(self, "_pending_regime", "TRENDING")
+                        if _regime == "SIDEWAYS":
+                            _tp = fp + 2.0 * atr_val
+                        elif _regime == "VOLATILE":
+                            _tp = fp + 1.5 * atr_val
+                        else:
+                            _tp = None
                         open_position = dict(entry_price=fp, qty=qty_f, stop=stop,
+                                             take_profit=_tp, entry_regime=_regime,
                                              entry_atr=atr_val, trail_active=False,
                                              entry_date=bar_date, entry_bar=i)
+                self._pending_regime = "TRENDING"
                 pending_signal = None
 
             # ── Fill pending SELL at T+1 open (T+2 enforced) ────────
@@ -349,16 +360,24 @@ class Backtester:
                         broker._positions.pop(symbol, None)
                         open_position = None
                     else:
-                        # Trailing stop: activate when high crosses +1R, then ratchet
-                        ep = open_position["entry_price"]
-                        atr_e = open_position["entry_atr"]
-                        trigger = ep + risk.ATR_TRAIL_TRIGGER * atr_e
-                        if not open_position["trail_active"] and hi >= trigger:
-                            open_position["trail_active"] = True
-                        if open_position["trail_active"]:
-                            new_stop = hi - risk.ATR_TRAIL_MULT * atr_e
-                            if new_stop > open_position["stop"]:
-                                open_position["stop"] = new_stop
+                        # Adaptive TP check for SIDEWAYS/VOLATILE regimes
+                        tp = open_position.get("take_profit")
+                        if tp is not None and hi >= tp:
+                            trades.append(self._make_trade(symbol, open_position, tp, bar_date))
+                            broker._cash += open_position["qty"] * tp * (1 - _COMMISSION_RATE - _SLIPPAGE_RATE)
+                            broker._positions.pop(symbol, None)
+                            open_position = None
+                        else:
+                            # Trailing stop: activate when high crosses +1R, then ratchet
+                            ep = open_position["entry_price"]
+                            atr_e = open_position["entry_atr"]
+                            trigger = ep + risk.ATR_TRAIL_TRIGGER * atr_e
+                            if not open_position["trail_active"] and hi >= trigger:
+                                open_position["trail_active"] = True
+                            if open_position["trail_active"]:
+                                new_stop = hi - risk.ATR_TRAIL_MULT * atr_e
+                                if new_stop > open_position["stop"]:
+                                    open_position["stop"] = new_stop
 
             # ── Generate signal on close of bar i ───────────────────
             # Only signal if position was open/closed BEFORE this bar
@@ -375,6 +394,7 @@ class Backtester:
 
                 if result.action == "BUY" and open_position is None:
                     pending_signal = "BUY"
+                    self._pending_regime = result.regime
                 elif result.action == "SELL" and open_position is not None:
                     pending_signal = "SELL"
 
