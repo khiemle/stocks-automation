@@ -265,12 +265,23 @@ class Backtester:
     def _simulate(self, symbol: str, df: pd.DataFrame) -> tuple[List[TradeLog], List[float]]:
         from brokers.simulated_broker import SimulatedBroker
         from signals.momentum_v1 import MomentumV1
+        from core.market_regime import MarketRegime
         from core.risk_engine import RiskEngine
         from ta.volatility import AverageTrueRange
 
         engine = MomentumV1()
         broker = SimulatedBroker(initial_cash=self._initial_cash)
         risk = RiskEngine(backtest_mdd=0.20, capital=self._initial_cash)
+
+        # Macro regime — shared VN30 basket; cache per Backtester instance so we
+        # don't rebuild it for every symbol.
+        if not hasattr(self, "_market_regime"):
+            try:
+                self._market_regime = MarketRegime()
+            except Exception as exc:
+                logger.warning("MarketRegime unavailable (%s); macro filter off", exc)
+                self._market_regime = None
+        regime_obj = self._market_regime
 
         # Pre-compute ATR for entire series once
         atr_series = AverageTrueRange(df["high"], df["low"], df["close"], window=14) \
@@ -349,8 +360,10 @@ class Backtester:
             # (avoids immediate re-entry on the stop-out bar)
             if pending_signal is None and not in_warmup:
                 window = df.iloc[: i + 1]
+                macro_ctx = regime_obj.context(df.index[i]) if regime_obj else None
                 try:
-                    result = engine.evaluate(window, foreign_flow=None)
+                    result = engine.evaluate(window, foreign_flow=None,
+                                             market_context=macro_ctx)
                 except Exception:
                     equity.append(equity[-1])
                     continue

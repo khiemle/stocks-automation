@@ -70,13 +70,23 @@ def cmd_scan(args):
     from data_sources.yfinance_client import YFinanceClient
     from data_sources.ssi_data_client import SSIDataClient
     from core.data_manager import DataManager
+    from core.market_regime import MarketRegime
     from signals.momentum_v1 import MomentumV1
+    import pandas as pd
 
     data_source_cls = {"YFINANCE": YFinanceClient, "SSI": SSIDataClient}[
         config["data_source"]
     ]
     dm = DataManager(data_source_cls())
     engine = MomentumV1()
+
+    # Macro regime — compute once at scan time, use latest available date
+    try:
+        regime = MarketRegime()
+        macro_ctx = regime.context(pd.Timestamp.today().normalize())
+    except Exception as exc:
+        print(f"[WARN] MarketRegime unavailable: {exc}. Macro filter OFF.")
+        macro_ctx = None
 
     symbols = [args.symbol] if args.symbol else list(dict.fromkeys(
         dm.get_universe("HOSE") + dm.get_universe("HNX")
@@ -86,7 +96,8 @@ def cmd_scan(args):
     for sym in symbols:
         try:
             df = dm.get_ohlcv(sym, days=300)
-            result = engine.evaluate(df, foreign_flow=None)
+            result = engine.evaluate(df, foreign_flow=None,
+                                     market_context=macro_ctx)
             results.append((sym, result))
             if args.symbol:
                 ind = result.indicators
@@ -115,6 +126,10 @@ def cmd_scan(args):
     if not args.symbol:
         buys = [(s, r) for s, r in results if r.action == "BUY"]
         sells = [(s, r) for s, r in results if r.action == "SELL"]
+        if macro_ctx is not None:
+            macro_ok = macro_ctx.get("macro_above_ema50")
+            tag = "BULLISH (VN30 > EMA50)" if macro_ok else "BEARISH (VN30 ≤ EMA50) — BUY blocked"
+            print(f"Macro regime   : {tag}")
         print(f"Scanned {len(results)} symbols — BUY: {len(buys)}, SELL: {len(sells)}, HOLD: {len(results)-len(buys)-len(sells)}")
         if buys:
             print("\n--- BUY signals ---")

@@ -32,6 +32,7 @@ class MomentumV1:
         self,
         df: pd.DataFrame,
         foreign_flow: pd.DataFrame | None,
+        market_context: dict | None = None,
     ) -> SignalResult:
         df = df.copy()
         close = df["close"]
@@ -155,6 +156,12 @@ class MomentumV1:
         # Volume breakout gate: chặn BUY khi volume bar hiện tại chưa đủ mạnh.
         # Momentum không có volume confirm → dễ chop → stop-out.
         if vol_ma20_v > 0 and vol_v / vol_ma20_v < _VOL_BREAKOUT_MIN:
+            score = min(score, _BUY_THRESHOLD - 0.01)
+
+        # Macro regime gate: chặn BUY khi VN30 basket đang ở dưới EMA50.
+        # Momentum strategy bleed nặng trong bear (2022, 2026Q1) — filter này tắt
+        # signal trong bear regime. market_context=None → skip (permissive).
+        if market_context is not None and market_context.get("macro_above_ema50") is False:
             score = min(score, _BUY_THRESHOLD - 0.01)
 
         if score > _BUY_THRESHOLD:

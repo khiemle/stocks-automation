@@ -26,6 +26,7 @@ class SignalEngineProtocol(Protocol):
         self,
         df: pd.DataFrame,
         foreign_flow: pd.DataFrame | None,
+        market_context: dict | None = None,
     ) -> SignalResult: ...
 
     def evaluate_intraday(

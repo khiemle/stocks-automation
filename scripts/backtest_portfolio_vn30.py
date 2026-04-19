@@ -29,6 +29,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from brokers.simulated_broker import _COMMISSION_RATE, _SLIPPAGE_RATE  # noqa: E402
+from core.market_regime import MarketRegime  # noqa: E402
 from core.risk_engine import RiskEngine  # noqa: E402
 from signals.momentum_v1 import MomentumV1  # noqa: E402
 from ta.volatility import AverageTrueRange  # noqa: E402
@@ -142,6 +143,8 @@ def run_portfolio(
 
     engine = MomentumV1()
     risk = RiskEngine(backtest_mdd=0.20, capital=initial_cash)
+    # Macro regime filter — same VN30 universe as symbols we trade
+    regime = MarketRegime(symbols=list(market.keys()))
 
     # First tradable date = _WARMUP bars after the earliest date with enough history
     # per symbol. Simpler: iterate from all_dates[_WARMUP:] (good enough — symbols
@@ -282,6 +285,7 @@ def run_portfolio(
         # ─────────────────────────────────────────────────────
         # D) Generate signals at close → queue for tomorrow's open
         # ─────────────────────────────────────────────────────
+        macro_ctx = regime.context(date)
         portfolio_full = len(positions) >= max_positions
         for sym, df in market.items():
             if date not in df.index:
@@ -293,7 +297,8 @@ def run_portfolio(
             if sym in positions:
                 # can we SELL it?
                 try:
-                    res = engine.evaluate(window, foreign_flow=None)
+                    res = engine.evaluate(window, foreign_flow=None,
+                                          market_context=macro_ctx)
                 except Exception:
                     continue
                 if res.action == "SELL":
@@ -313,7 +318,8 @@ def run_portfolio(
             if not eligible:
                 continue
             try:
-                res = engine.evaluate(window, foreign_flow=None)
+                res = engine.evaluate(window, foreign_flow=None,
+                                      market_context=macro_ctx)
             except Exception:
                 continue
             if res.action == "BUY":
