@@ -3,6 +3,8 @@
 Swing-trading bot cho thị trường chứng khoán Việt Nam (HOSE + HNX).  
 3 phases: Paper Trading → Semi-auto (SSI API) → Full auto.
 
+> **Nguồn chính thống cho thuật toán**: [`docs/vn-swing-trading.md`](docs/vn-swing-trading.md) — algo spec hiện tại, baseline metrics, và roadmap cải tiến. Mọi thay đổi signal/risk/execution phải cập nhật file này theo protocol ở section 5.
+
 ## Yêu cầu
 
 ```bash
@@ -15,16 +17,26 @@ pip install -r requirements.txt
 ```
 trading_bot.py          # Bot chính (APScheduler, CLI)
 streamlit_app.py        # Web dashboard (port 8501)
-core/                   # DataManager, RiskEngine, PortfolioManager, Backtester
+core/                   # DataManager, RiskEngine, PortfolioManager,
+                        # Backtester, MarketRegime (VN30 macro filter)
 signals/                # MomentumV1 + ENGINE_REGISTRY
 brokers/                # SimulatedBroker, SSIBroker
 data_sources/           # YFinanceClient, SSIDataClient
 integrations/           # Telegram bot
+scripts/                # backtest_portfolio_vn30.py (portfolio baseline),
+                        # backtest_vn30.py (per-symbol diagnostic)
+docs/                   # vn-swing-trading.md (algorithm SSoT)
 data/universe/          # HOSE.txt, HNX.txt (~290 mã)
 tests/unit/             # Unit tests
 tests/integration/      # Integration tests
 tests/e2e/              # End-to-end tests
 ```
+
+## Trạng thái hiện tại (2026-04-19)
+
+- **Milestones 1-4** đã hoàn thành (Data Layer, Signal & Risk Engine, Portfolio Manager, Backtester).
+- **Baseline VN30 portfolio (500M, max 5 slots, 4 năm)** — sau khi đóng Top-3 roadmap items (macro filter, volume gate, trailing stop): CAGR +1.74%, Sharpe 0.261, MDD 8.62%, WR 36.74%, PF 1.106. Xem chi tiết + Before/After ở `docs/vn-swing-trading.md` section 2.
+- **102 tests pass** (`pytest tests/ -q`).
 
 ---
 
@@ -62,13 +74,20 @@ python trading_bot.py update-daily
 
 ---
 
-### Milestone 2 — Signal & Risk Engine
-> Week 3 | `signals/momentum_v1.py`, `core/risk_engine.py`
+### Milestone 2 — Signal & Risk Engine ✅
+> Week 3 | `signals/momentum_v1.py`, `core/risk_engine.py`, `core/market_regime.py`
+
+**Hard gates chặn BUY** (xem `docs/vn-swing-trading.md` §1.1):
+- `RSI14 > 75` — overbought
+- `close < EMA200` — trend filter per-symbol
+- `vol / vol_MA20 < 1.5` — yêu cầu volume breakout
+- VN30 basket ≤ EMA50 — macro bear filter
 
 **Chạy unit tests:**
 ```bash
 pytest tests/unit/test_momentum_v1.py -v
 pytest tests/unit/test_risk_engine.py -v
+pytest tests/unit/test_market_regime.py -v
 ```
 
 **Kiểm tra critical tests (bắt buộc pass 100%):**
@@ -76,18 +95,28 @@ pytest tests/unit/test_risk_engine.py -v
 # Look-ahead bias
 pytest tests/unit/test_momentum_v1.py::test_no_look_ahead_bias -v
 
+# Volume breakout gate
+pytest tests/unit/test_momentum_v1.py::test_volume_breakout_blocks_buy_when_vol_below_1_5x -v
+pytest tests/unit/test_momentum_v1.py::test_volume_breakout_allows_buy_when_spike -v
+
 # Circuit breaker
 pytest tests/unit/test_risk_engine.py::test_circuit_breaker_triggers_at_150pct -v
 pytest tests/unit/test_risk_engine.py::test_circuit_breaker_no_trigger_below_150pct -v
+
+# Trailing stop ratchet
+pytest tests/unit/test_risk_engine.py::test_trailing_stop_update_ratchets_monotonically -v
 ```
 
-**Scan thử 1 mã:**
+**Scan thử 1 mã / toàn thị trường:**
 ```bash
 python trading_bot.py scan --symbol VCB
 # Kỳ vọng: in ra SignalResult với score, regime, action, indicators
+
+python trading_bot.py scan
+# Kỳ vọng: in trạng thái macro regime (VN30 vs EMA50) + danh sách BUY/SELL
 ```
 
-**✅ Milestone 2 đạt khi:** look-ahead bias test pass 100% + circuit breaker test pass 100%
+**✅ Milestone 2 đạt khi:** look-ahead bias test pass 100% + circuit breaker test pass 100% + volume/trailing tests pass
 
 ---
 
@@ -115,8 +144,8 @@ pytest tests/integration/test_portfolio_db.py -v
 
 ---
 
-### Milestone 4 — Backtesting Engine
-> Week 5 | `core/backtester.py`, `brokers/simulated_broker.py`
+### Milestone 4 — Backtesting Engine ✅
+> Week 5 | `core/backtester.py`, `brokers/simulated_broker.py`, `scripts/backtest_portfolio_vn30.py`
 
 **Chạy unit tests:**
 ```bash
@@ -136,13 +165,25 @@ python trading_bot.py backtest-all --walk-forward --split 0.7
 # Kỳ vọng: báo cáo có cả in-sample và out-of-sample
 ```
 
+**Portfolio backtest (swing trading lens — đây là baseline chính):**
+```bash
+python scripts/backtest_portfolio_vn30.py
+# 500M VND, max_positions=5, shared cash pool, VN30 universe, 5 năm
+# Output:
+#   data/backtest_portfolio_vn30_trades.csv
+#   data/backtest_portfolio_vn30_equity.csv
+#   data/backtest_portfolio_vn30_periodic.csv
+# Baseline hiện tại (2026-04-19): CAGR +1.74%, Sharpe 0.261,
+#                                  MDD 8.62%, WR 36.74%, PF 1.106
+```
+
 **Kiểm tra 8 metrics bắt buộc có trong báo cáo:**
 ```bash
 pytest tests/unit/test_backtester.py::test_all_8_metrics_present_in_report -v
 # Metrics: Sharpe, Sortino, IR, MDD, WinRate, ProfitFactor, trades, return
 ```
 
-**✅ Milestone 4 đạt khi:** backtest HPG 3 năm < 60s + kết quả khớp paper simulation
+**✅ Milestone 4 đạt khi:** backtest HPG 3 năm < 60s + portfolio backtest output khớp với baseline ghi trong `docs/vn-swing-trading.md` §2
 
 ---
 
@@ -227,13 +268,15 @@ pytest tests/e2e/test_full_flow.py -v
 **Kiểm tra Phase 1 criteria sau 60 ngày paper trading:**
 ```bash
 python trading_bot.py report --period 60d
-# Kỳ vọng:
-#   Sharpe Ratio    >= 1.0
-#   Info Ratio      >= 0  (vs VN-Index)
-#   MDD             <= 15%
-#   Win Rate        >= 52%
+# Mục tiêu (align với baseline hiện tại + roadmap):
+#   Sharpe Ratio    >= 1.0   (baseline hiện 0.261)
+#   Info Ratio      >= 0     (vs VN-Index)
+#   MDD             <= 12%   (baseline hiện 8.62% ✅)
+#   Win Rate        >= 40%   (baseline hiện 36.74%)
+#   Profit Factor   >= 1.3   (baseline hiện 1.106)
 #   Số giao dịch    >= 30
 ```
+Baseline hiện chưa đạt Sharpe/PF target — cần tiếp tục roadmap ở `docs/vn-swing-trading.md` §3.8 (RS vs VN30, MACD zero-line, regime-adaptive TP) trước khi chuyển Phase 2.
 
 **✅ Milestone 7 (Phase 1) đạt khi:** 5 E2E scenarios pass + 60 ngày paper trading đạt tất cả metrics
 
