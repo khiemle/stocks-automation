@@ -287,7 +287,8 @@ Status: `[ ]` todo · `[~]` đang làm · `[x]` xong (kèm commit SHA + impact �
   - **Success**: MDD trong period đó < 10%, quarterly return ≥ -2%
 - [ ] **Parameter sensitivity grid** — sweep BUY_THRESHOLD ∈ {0.45, 0.50, 0.55, 0.60, 0.65} × ATR_TP_MULT ∈ {2, 3, 4.5, 6, trailing}
   - **Success**: xác định flat plateau (robust) vs sharp peak (overfit)
-- [ ] **Walk-forward re-validation** — sau khi implement Top-3 cải tiến, chạy lại portfolio backtest với IS/OOS split
+- [x] **Walk-forward re-validation** — script `scripts/backtest_portfolio_walkforward.py` chạy IS/OOS 70/30 trên VN30 portfolio *(commit pending)*
+  - **Implementation**: Tách toàn bộ date index 70/30, OOS prepend thêm `_WARMUP=252` bars từ cuối IS để giữ EMA200 calibrated. Chạy cùng engine với đầy đủ: MACD gate, RS gate, adaptive TP, breakeven stop, sector limit. In IS/OOS comparison table + check Sharpe delta < 0.3.
   - **Success**: IS/OOS Sharpe lệch < 0.3
 
 ### 3.8 Thứ tự ưu tiên (đề xuất)
