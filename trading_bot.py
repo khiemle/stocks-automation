@@ -52,6 +52,25 @@ def cmd_start(args):
     bot.start()
 
 
+def cmd_place_orders(args):
+    """Trigger order_placement_job immediately — place all APPROVED signals now."""
+    config = load_config()
+    bot = build_bot(config)
+    approved_before = [s for s in bot.queue if s.status == "APPROVED"]
+    if not approved_before:
+        print("Không có signal nào ở trạng thái APPROVED trong queue.")
+        return
+    print(f"Tìm thấy {len(approved_before)} APPROVED signal(s): {[s.symbol for s in approved_before]}")
+    bot.order_placement_job()
+    placed = [s for s in bot.queue if s.status == "ORDER_PLACED"]
+    rejected = [s for s in bot.queue if s.status == "REJECTED" and s.symbol in {a.symbol for a in approved_before}]
+    print(f"\nKết quả:")
+    for s in placed:
+        print(f"  ✅ ORDER_PLACED  {s.symbol}  order_id={s.id}")
+    for s in rejected:
+        print(f"  ❌ REJECTED      {s.symbol}")
+
+
 def cmd_scan_signals(args):
     """Run daily_scan_job immediately: scan → write signal_queue → Telegram notify."""
     config = load_config()
@@ -267,6 +286,7 @@ def main():
 
     sub.add_parser("update-daily")
     sub.add_parser("scan-signals")
+    sub.add_parser("place-orders")
 
     p_val = sub.add_parser("validate")
     p_val.add_argument("--symbol", default=None, help="single symbol (omit = all)")
@@ -285,6 +305,8 @@ def main():
 
     if args.command == "scan-signals":
         cmd_scan_signals(args)
+    elif args.command == "place-orders":
+        cmd_place_orders(args)
     elif args.command == "scan":
         cmd_scan(args)
     elif args.command == "update-daily":
