@@ -47,9 +47,25 @@ def build_bot(config: dict):
 
 
 def cmd_start(args):
+    import signal as _signal
+    import time
+
     config = load_config()
     bot = build_bot(config)
     bot.start()
+
+    # BackgroundScheduler chạy trên daemon thread — main thread phải block
+    # để process không thoát ngay sau start().
+    def _shutdown(signum, frame):
+        print("\nShutting down bot...")
+        bot.stop()
+
+    _signal.signal(_signal.SIGINT,  _shutdown)
+    _signal.signal(_signal.SIGTERM, _shutdown)
+
+    print("Bot is running. Press Ctrl+C to stop.")
+    while bot._scheduler and bot._scheduler.running:
+        time.sleep(5)
 
 
 def cmd_place_orders(args):
