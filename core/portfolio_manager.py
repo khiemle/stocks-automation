@@ -68,6 +68,18 @@ CREATE TABLE IF NOT EXISTS equity_history (
     market_value  REAL    NOT NULL,
     nav           REAL    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS monitor_logs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at            TEXT    NOT NULL,
+    run_type          TEXT    NOT NULL,   -- 'INTRADAY' | 'EOD'
+    positions_checked INTEGER DEFAULT 0,
+    stops_hit         TEXT    DEFAULT '[]',
+    tps_hit           TEXT    DEFAULT '[]',
+    trails_updated    TEXT    DEFAULT '[]',
+    new_signals       TEXT    DEFAULT '[]',
+    prices            TEXT    DEFAULT '{}'
+);
 """
 
 

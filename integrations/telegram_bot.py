@@ -101,18 +101,86 @@ class TelegramNotifier:
         )
         return self.send_message(text)
 
+    def notify_intraday_report(
+        self,
+        run_at: str,
+        positions: dict,   # {symbol: (Position, price|None)}
+        events: dict,
+    ) -> bool:
+        if not positions:
+            return True
+        time_str = run_at[11:16] if len(run_at) >= 16 else run_at
+
+        lines = [f"🔄 *Monitor {time_str}*"]
+
+        if events.get("stops_hit"):
+            for e in events["stops_hit"]:
+                lines.append(f"🛑 Stop hit: {e['symbol']} @ {e['price']:,.0f}  P&L {e['pnl']:+,.0f}")
+        if events.get("tps_hit"):
+            for e in events["tps_hit"]:
+                lines.append(f"🎯 TP hit: {e['symbol']} @ {e['price']:,.0f}  P&L {e['pnl']:+,.0f}")
+        if events.get("trails_updated"):
+            for e in events["trails_updated"]:
+                lines.append(f"🔼 Trail {e['symbol']}: stop {e['old_stop']:,.0f} → {e['new_stop']:,.0f}")
+        if events.get("new_signals"):
+            lines.append(f"🟢 New signals: {', '.join(events['new_signals'])}")
+
+        has_events = any(events.get(k) for k in ("stops_hit", "tps_hit", "trails_updated", "new_signals"))
+        if not has_events:
+            lines.append("✅ All clear")
+
+        lines.append("")
+        for sym, (pos, price) in positions.items():
+            if price and price > 0:
+                pnl_pct = (price - pos.avg_price) / pos.avg_price
+                arrow = "▲" if pnl_pct >= 0 else "▼"
+                lines.append(
+                    f"  {sym}  {price:,.0f} {arrow}{pnl_pct:+.1%}"
+                    f"  stop {pos.stop_loss:,.0f}"
+                )
+            else:
+                lines.append(f"  {sym}  — (no price)  stop {pos.stop_loss:,.0f}")
+
+        return self.send_message("\n".join(lines))
+
     def notify_daily_summary(
         self,
         date: str,
         num_trades: int,
         equity: float,
         pnl_pct: float,
+        positions: dict | None = None,
+        prices: dict | None = None,
+        closed_trades: list | None = None,
     ) -> bool:
-        direction = "\U0001f4c8" if pnl_pct >= 0 else "\U0001f4c9"
-        text = (
-            f"{direction} *Tóm tắt ngày {date}*\n"
-            f"Số giao dịch: {num_trades}\n"
-            f"NAV: {equity:,.0f} VND\n"
-            f"P&L ngày: {pnl_pct:+.2%}"
-        )
-        return self.send_message(text)
+        direction = "📈" if pnl_pct >= 0 else "📉"
+        lines = [
+            f"{direction} *Tóm tắt ngày {date}*",
+            f"NAV: {equity:,.0f} VND",
+            f"P&L ngày: {pnl_pct:+.2%}",
+        ]
+
+        if positions:
+            lines.append(f"\n📂 *Positions ({len(positions)})*")
+            for sym, pos in positions.items():
+                price = (prices or {}).get(sym, 0) or 0
+                if price > 0:
+                    pp = (price - pos.avg_price) / pos.avg_price
+                    arrow = "▲" if pp >= 0 else "▼"
+                    lines.append(
+                        f"  {sym} ×{pos.qty:,}  {price:,.0f} {arrow}{pp:+.1%}"
+                        f"  stop {pos.stop_loss:,.0f}"
+                    )
+                else:
+                    lines.append(f"  {sym} ×{pos.qty:,}  entry {pos.avg_price:,.0f}  stop {pos.stop_loss:,.0f}")
+
+        if closed_trades:
+            lines.append(f"\n📋 *Đã đóng hôm nay ({len(closed_trades)})*")
+            for t in closed_trades:
+                tag = "WIN ✅" if t.net_pnl > 0 else "LOSS ❌"
+                lines.append(f"  {t.symbol}  {t.net_pnl:+,.0f} VND  {tag}")
+        else:
+            lines.append("\n📋 Không có giao dịch đóng hôm nay")
+
+        lines.append(f"\n🔔 *Mua mới hôm nay: {num_trades}*")
+        return self.send_message("\n".join(lines))

@@ -87,6 +87,25 @@ def cmd_place_orders(args):
         print(f"  ❌ REJECTED      {s.symbol}")
 
 
+def cmd_fill_orders(args):
+    """Simulate T+1 fill for all ORDER_PLACED signals at today's open price."""
+    config = load_config()
+    bot = build_bot(config)
+    placed_before = [s for s in bot.queue if s.status == "ORDER_PLACED"]
+    if not placed_before:
+        print("Không có signal nào ở trạng thái ORDER_PLACED.")
+        return
+    print(f"Tìm thấy {len(placed_before)} ORDER_PLACED signal(s): {[s.symbol for s in placed_before]}")
+    bot.fill_orders_job()
+    filled = [s for s in bot.queue if s.status == "FILLED" and s.symbol in {p.symbol for p in placed_before}]
+    rejected = [s for s in bot.queue if s.status == "REJECTED" and s.symbol in {p.symbol for p in placed_before}]
+    print(f"\nKết quả:")
+    for s in filled:
+        print(f"  ✅ FILLED   {s.symbol}  qty={s.qty}  fill_price={s.fill_price:,.0f}  delay_cost={s.delay_cost:+.0f}")
+    for s in rejected:
+        print(f"  ❌ REJECTED {s.symbol}")
+
+
 def cmd_scan_signals(args):
     """Run daily_scan_job immediately: scan → write signal_queue → Telegram notify."""
     config = load_config()
@@ -303,6 +322,7 @@ def main():
     sub.add_parser("update-daily")
     sub.add_parser("scan-signals")
     sub.add_parser("place-orders")
+    sub.add_parser("fill-orders")
 
     p_val = sub.add_parser("validate")
     p_val.add_argument("--symbol", default=None, help="single symbol (omit = all)")
@@ -323,6 +343,8 @@ def main():
         cmd_scan_signals(args)
     elif args.command == "place-orders":
         cmd_place_orders(args)
+    elif args.command == "fill-orders":
+        cmd_fill_orders(args)
     elif args.command == "scan":
         cmd_scan(args)
     elif args.command == "update-daily":

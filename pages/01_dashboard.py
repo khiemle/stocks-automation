@@ -1,6 +1,8 @@
 """Trang 1: Dashboard — equity, positions, circuit breaker, equity curve."""
 from __future__ import annotations
 
+import json
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
@@ -12,6 +14,23 @@ from core.ui_helpers import (
     load_portfolio,
 )
 
+
+def _load_latest_prices(db_path: Path = Path("data/trades.db")) -> tuple[dict[str, float], str]:
+    """Read prices from the most recent monitor_logs entry written by the bot."""
+    if not db_path.exists():
+        return {}, ""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT prices, run_at FROM monitor_logs "
+                "WHERE prices != '{}' ORDER BY run_at DESC LIMIT 1"
+            ).fetchone()
+        if row:
+            return json.loads(row[0] or "{}"), row[1]
+    except Exception:
+        pass
+    return {}, ""
+
 st.set_page_config(page_title="Dashboard — VN Auto Trading", layout="wide")
 st.title("Dashboard")
 
@@ -21,6 +40,7 @@ st.title("Dashboard")
 config = load_config()
 portfolio = load_portfolio()
 equity_history = load_equity_history()
+latest_prices, prices_updated_at = _load_latest_prices()
 
 cash: float = portfolio.get("cash", 0)
 positions: dict = portfolio.get("positions", {})
@@ -29,7 +49,10 @@ initial_capital: float = config.get("capital", {}).get("initial", 500_000_000)
 # ---------------------------------------------------------------------------
 # Top metrics row
 # ---------------------------------------------------------------------------
-market_value = sum(p.get("qty", 0) * p.get("avg_price", 0) for p in positions.values())
+market_value = sum(
+    p.get("qty", 0) * (latest_prices.get(sym, p.get("avg_price", 0)))
+    for sym, p in positions.items()
+)
 nav = cash + market_value
 total_return_pct = (nav - initial_capital) / initial_capital * 100 if initial_capital else 0
 
@@ -79,17 +102,29 @@ st.divider()
 # Positions table
 # ---------------------------------------------------------------------------
 st.subheader("Open Positions")
+if prices_updated_at:
+    st.caption(f"Giá cập nhật lúc: {prices_updated_at[11:16]} (bot intraday job — mỗi 15p / cuối ngày)")
 if positions:
     rows = []
     for sym, p in positions.items():
+        avg = p.get("avg_price", 0)
+        price = latest_prices.get(sym)
+        if price and avg:
+            pnl_pct = (price - avg) / avg * 100
+            pnl_pct_str = f"{pnl_pct:+.2f}%"
+            price_str = f"{price:,.0f}"
+        else:
+            price_str = "—"
+            pnl_pct_str = "—"
         rows.append({
             "Symbol": sym,
             "Qty": p.get("qty", 0),
-            "Avg Price": f"{p.get('avg_price', 0):,.0f}",
+            "Avg Price": f"{avg:,.0f}",
+            "Price": price_str,
+            "P&L %": pnl_pct_str,
             "Stop Loss": f"{p.get('stop_loss', 0):,.0f}",
             "Take Profit": f"{p.get('take_profit', 0):,.0f}",
-            "Trail Active": "✓" if p.get("trail_active") else "",
-            "Engine": p.get("engine", ""),
+            "Trail": "✓" if p.get("trail_active") else "",
             "Buy Date": p.get("buy_date", ""),
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)

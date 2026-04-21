@@ -64,6 +64,7 @@ class Signal:
     signal_price: float = 0.0    # EOD close at scan time
     fill_price: float = 0.0      # actual fill price (set on FILLED)
     delay_cost: float = 0.0      # per-share shortfall: fill_price - signal_price
+    qty: int = 0                 # shares ordered (set in order_placement_job)
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +140,14 @@ class TradingBot:
                 hour=int(order_time[0]), minute=int(order_time[1]),
                 timezone=_TIMEZONE,
             ), id="order_placement", replace_existing=True,
+        )
+
+        fill_time = sch.get("fill_orders_time", "09:30").split(":")
+        self._scheduler.add_job(
+            self.fill_orders_job, CronTrigger(
+                hour=int(fill_time[0]), minute=int(fill_time[1]),
+                timezone=_TIMEZONE,
+            ), id="fill_orders", replace_existing=True,
         )
 
         cancel_time = sch.get("cancel_unfilled_time", "14:30").split(":")
@@ -292,7 +301,7 @@ class TradingBot:
         logger.info("daily_scan_job: %d new BUY signals", len(new_signals))
 
     def intraday_monitor_job(self) -> None:
-        """Every 30 min — check stops/trailing for positions + watchlist scan."""
+        """Every 15 min — check stops/trailing for positions + watchlist scan."""
         if not _SKIP_TRADING_HOURS_CHECK:
             now = datetime.now()
             if not (
@@ -304,6 +313,7 @@ class TradingBot:
 
         from core.risk_engine import RiskEngine
 
+        run_at = datetime.now().isoformat(timespec="seconds")
         positions = self._portfolio.positions
         watchlist: list[str] = self._config.get("watchlist", [])
         symbols_to_fetch = list(positions.keys()) + watchlist
@@ -318,6 +328,13 @@ class TradingBot:
             logger.warning("intraday_monitor: price fetch failed: %s", exc)
             return
 
+        events: dict = {
+            "stops_hit": [],
+            "tps_hit": [],
+            "trails_updated": [],
+            "new_signals": [],
+            "prices": {k: v for k, v in prices.items() if v is not None and k in positions},
+        }
         state_changed = False
 
         # Portfolio: stop / trailing
@@ -332,6 +349,7 @@ class TradingBot:
                 pnl = pos.unrealized_pnl(price)
                 self._place_exit_order(sym, pos, price, reason="STOP")
                 self._notifier.notify_stop_loss_hit(symbol=sym, exit_price=price, pnl=pnl)
+                events["stops_hit"].append({"symbol": sym, "price": price, "pnl": round(pnl)})
                 state_changed = True
                 continue
 
@@ -341,6 +359,7 @@ class TradingBot:
                 pnl = pos.unrealized_pnl(price)
                 self._place_exit_order(sym, pos, price, reason="TP")
                 self._notifier.notify_tp_hit(symbol=sym, exit_price=price, pnl=pnl)
+                events["tps_hit"].append({"symbol": sym, "price": price, "pnl": round(pnl)})
                 state_changed = True
                 continue
 
@@ -353,6 +372,12 @@ class TradingBot:
                 if pos.trail_active:
                     new_stop = price - RiskEngine.ATR_TRAIL_MULT * pos.entry_atr
                     if new_stop > pos.stop_loss:
+                        events["trails_updated"].append({
+                            "symbol": sym,
+                            "old_stop": round(pos.stop_loss),
+                            "new_stop": round(new_stop),
+                            "price": round(price),
+                        })
                         self._portfolio.update_stop(sym, new_stop)
                         state_changed = True
                         logger.debug("intraday_monitor: trail stop %s → %.0f", sym, new_stop)
@@ -386,6 +411,7 @@ class TradingBot:
                             indicators=result.indicators,
                         )
                         self._queue.append(intraday_sig)
+                        events["new_signals"].append(sym)
                         state_changed = True
                         logger.info("INTRADAY signal: %s score=%.3f", sym, result.score)
             except Exception as exc:
@@ -394,6 +420,14 @@ class TradingBot:
         if state_changed:
             self._portfolio.save_state()
             self._save_queue()
+
+        # Log and report regardless of whether state changed
+        self._log_monitor_run(run_at, "INTRADAY", len(positions), events)
+        self._notifier.notify_intraday_report(
+            run_at=run_at,
+            positions={sym: (pos, prices.get(sym)) for sym, pos in positions.items()},
+            events=events,
+        )
 
     def order_placement_job(self) -> None:
         """09:10 — place APPROVED signals as orders."""
@@ -412,10 +446,11 @@ class TradingBot:
                 sig.status = "REJECTED"
                 continue
             try:
+                qty = self._compute_qty(sig)
                 result = self._broker.place_order(
                     symbol=sig.symbol,
                     side="B",
-                    quantity=self._compute_qty(sig),
+                    quantity=qty,
                     order_type="ATO",
                     price=None,
                     account="paper",
@@ -423,6 +458,7 @@ class TradingBot:
                 if result.status in ("PLACED", "SIMULATED"):
                     sig.status = "ORDER_PLACED"
                     sig.id = result.order_id
+                    sig.qty = qty
                     logger.info("order_placement: %s placed order_id=%s", sig.symbol, sig.id)
                 else:
                     sig.status = "REJECTED"
@@ -431,6 +467,84 @@ class TradingBot:
                 logger.error("order_placement: %s exception: %s", sig.symbol, exc)
 
         self._save_queue()
+
+    def fill_orders_job(self) -> None:
+        """09:30 — simulate T+1 fill for ORDER_PLACED signals at today's open price."""
+        from brokers.simulated_broker import _SLIPPAGE_RATE, _COMMISSION_RATE
+        from core.portfolio_manager import Position
+
+        placed = [s for s in self._queue if s.status == "ORDER_PLACED"]
+        if not placed:
+            return
+
+        today = date.today().isoformat()
+        state_changed = False
+
+        for sig in placed:
+            if sig.qty <= 0:
+                logger.warning("fill_orders_job: %s has qty=0 — skipping", sig.symbol)
+                continue
+            try:
+                # Use live intraday price as fill proxy; fall back to latest Parquet close
+                open_price = None
+                try:
+                    prices = self._dm.data_source.get_intraday_prices_batch([sig.symbol])
+                    open_price = prices.get(sig.symbol)
+                except Exception:
+                    pass
+
+                if not open_price:
+                    df = self._dm.get_ohlcv(sig.symbol, days=5)
+                    if df.empty:
+                        logger.warning("fill_orders_job: no data for %s", sig.symbol)
+                        continue
+                    open_price = float(df.iloc[-1]["close"])
+
+                bar_date = today
+
+                fill_price = open_price * (1 + _SLIPPAGE_RATE)
+                cost = sig.qty * fill_price * (1 + _COMMISSION_RATE)
+
+                if cost > self._portfolio.cash:
+                    logger.warning(
+                        "fill_orders_job: insufficient cash for %s (need %.0f, have %.0f) — rejecting",
+                        sig.symbol, cost, self._portfolio.cash,
+                    )
+                    sig.status = "REJECTED"
+                    state_changed = True
+                    continue
+
+                atr_v = sig.indicators.get("atr", 0) or 0
+                pos = Position(
+                    symbol=sig.symbol,
+                    qty=sig.qty,
+                    avg_price=fill_price,
+                    stop_loss=sig.stop_loss,
+                    take_profit=sig.take_profit,
+                    buy_date=bar_date,
+                    engine=sig.engine,
+                    entry_atr=atr_v,
+                )
+                self._portfolio.open_position(pos)
+
+                sig.status = "FILLED"
+                sig.fill_price = fill_price
+                sig.delay_cost = fill_price - sig.signal_price
+                state_changed = True
+                logger.info("fill_orders_job: %s FILLED %d @ %.0f", sig.symbol, sig.qty, fill_price)
+
+                self._notifier.notify_order_filled(
+                    symbol=sig.symbol,
+                    fill_price=fill_price,
+                    qty=sig.qty,
+                    side="B",
+                )
+            except Exception as exc:
+                logger.warning("fill_orders_job: %s error: %s", sig.symbol, exc)
+
+        if state_changed:
+            self._portfolio.save_state()
+            self._save_queue()
 
     def cancel_unfilled_job(self) -> None:
         """14:30 — cancel orders still in ORDER_PLACED status."""
@@ -447,6 +561,9 @@ class TradingBot:
 
     def equity_snapshot_job(self) -> None:
         """15:10 — record daily NAV to equity_history table."""
+        # Reload from file so CLI-filled orders made in a separate process are visible
+        self._portfolio.load_state()
+        self._queue = self._load_queue()
         positions = self._portfolio.positions
         if not positions:
             return
@@ -485,6 +602,9 @@ class TradingBot:
 
     def daily_summary_job(self) -> None:
         """16:00 — send daily summary via Telegram."""
+        # Reload from file so CLI-filled orders made in a separate process are visible
+        self._portfolio.load_state()
+        self._queue = self._load_queue()
         today = date.today().isoformat()
         positions = self._portfolio.positions
         try:
@@ -495,13 +615,33 @@ class TradingBot:
             equity = self._portfolio.get_equity(prices)
             initial = self._config["capital"]["initial"]
             pnl_pct = (equity - initial) / initial if initial > 0 else 0.0
-            filled_today = [s for s in self._queue if s.status == "FILLED" and s.created_at.startswith(today)]
+            # Count trades filled today using position buy_date (not signal created_at)
+            filled_today = [
+                sym for sym, pos in positions.items()
+                if pos.buy_date == today
+            ]
+            closed_today = [
+                t for t in self._portfolio.trades
+                if t.exit_date == today
+            ]
             self._notifier.notify_daily_summary(
                 date=today,
                 num_trades=len(filled_today),
                 equity=equity,
                 pnl_pct=pnl_pct,
+                positions=positions,
+                prices=prices,
+                closed_trades=closed_today,
             )
+            # Log EOD run to monitor_logs
+            eod_events = {
+                "stops_hit": [],
+                "tps_hit": [],
+                "trails_updated": [],
+                "new_signals": [s for s in self._queue if s.status == "PENDING" and s.created_at.startswith(today)],
+                "prices": prices,
+            }
+            self._log_monitor_run(today + "T16:00:00", "EOD", len(positions), eod_events)
             logger.info("daily_summary_job: equity=%.0f pnl_pct=%.2f%%", equity, pnl_pct * 100)
         except Exception as exc:
             logger.warning("daily_summary_job failed: %s", exc)
@@ -543,6 +683,29 @@ class TradingBot:
         max_by_cap = cash * self._risk.MAX_POSITION_PCT / close_v
         raw = min(risk_budget / stop_dist, max_by_cap)
         return int(raw // 100 * 100)
+
+    def _log_monitor_run(self, run_at: str, run_type: str, positions_checked: int, events: dict) -> None:
+        import sqlite3, json as _json
+        db = Path("data/trades.db")
+        if not db.exists():
+            return
+        try:
+            with sqlite3.connect(db) as conn:
+                conn.execute(
+                    "INSERT INTO monitor_logs(run_at, run_type, positions_checked, "
+                    "stops_hit, tps_hit, trails_updated, new_signals, prices) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        run_at, run_type, positions_checked,
+                        _json.dumps(events.get("stops_hit", [])),
+                        _json.dumps(events.get("tps_hit", [])),
+                        _json.dumps(events.get("trails_updated", [])),
+                        _json.dumps(events.get("new_signals", [])),
+                        _json.dumps(events.get("prices", {})),
+                    ),
+                )
+        except Exception as exc:
+            logger.warning("_log_monitor_run failed: %s", exc)
 
     def _log_scan_to_db(self, signals: List[Signal]) -> None:
         import sqlite3
